@@ -1,0 +1,100 @@
+# PassportAI — .gitignore
+
+# ---- Environment & Secrets ----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---- Generated Output ----
+output/
+!output/.gitkeep
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ---- Virtual Environments ----
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# ---- Testing & Coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+nosetests.xml
+test-results/
+
+# ---- Type Checking ----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---- Jupyter ----
+.ipynb_checkpoints
+*.ipynb
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- rembg Model Cache ----
+# rembg downloads U2Net model on first run (~170MB)
+# It is cached here — do not commit
+.u2net/
+
+# ---- AWS ----
+.aws/
+
+# ---- Temporary Files ----
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# ---- Ollama ----
+# Do not commit model files if accidentally placed here
+*.gguf
+*.bin

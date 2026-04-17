@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/battery_dpp.json",
+  "title": "Battery DPP Schema",
+  "description": "Battery-specific fields per EU Battery Regulation 2023/1542. DPP mandatory from 2026-02-18.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "required": ["batteryChemistry", "ratedCapacity", "stateOfHealth"],
+      "properties": {
+        "batteryChemistry": {"type": "string", "description": "e.g. Li-ion NMC, LFP, NiMH"},
+        "ratedCapacity": {"type": "number", "description": "Capacity in Ampere-hours (Ah)"},
+        "nominalVoltage": {"type": ["number", "null"], "description": "Voltage in Volts"},
+        "stateOfHealth": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "cycleLifeExpected": {"type": ["integer", "null"], "description": "Number of charge cycles"},
+        "cobaltContent": {"type": ["number", "null"], "description": "Cobalt % by weight"},
+        "lithiumContent": {"type": ["number", "null"], "description": "Lithium % by weight"},
+        "repairabilityScore": {"type": ["integer", "null"], "minimum": 1, "maximum": 10},
+        "hazardousSubstances": {"type": "array", "items": {"type": "string"}},
+        "batteryMassKg": {"type": ["number", "null"]},
+        "carbonFootprintPerKwh": {"type": ["number", "null"], "description": "kg CO2e per kWh capacity"},
+        "declarationOfConformity": {
+          "type": "object",
+          "description": "Required for batteries",
+          "properties": {
+            "present": {"type": "boolean"},
+            "documentUrl": {"type": ["string", "null"]}
+          }
+        }
+      }
+    }
+  }
+}

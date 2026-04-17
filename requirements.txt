@@ -1,0 +1,62 @@
+# PassportAI — Python Dependencies
+# Install: pip install -r requirements.txt
+#
+# Python version: 3.11+
+# Ollama must be installed separately: https://ollama.com/download
+
+# ---- AI / LLM ----
+ollama>=0.2.0                   # Python SDK for Ollama (local LLM server)
+
+# ---- Web Frameworks ----
+fastapi>=0.110.0                # REST API server
+uvicorn[standard]>=0.29.0       # ASGI server for FastAPI
+gradio>=4.26.0                  # Web UI framework
+
+# ---- Image Processing ----
+rembg>=2.0.56                   # Background removal (U2Net model)
+Pillow>=10.3.0                  # Image manipulation
+onnxruntime>=1.17.1             # Required by rembg (CPU inference)
+
+# ---- QR Code ----
+qrcode[pil]>=7.4.2              # QR code generation with PIL renderer
+
+# ---- JSON-LD / Validation ----
+pyld>=2.0.4                     # JSON-LD processing and validation
+jsonschema>=4.21.1              # JSON Schema validation
+
+# ---- PDF Generation ----
+jinja2>=3.1.3                   # HTML templating
+weasyprint>=62.0                # HTML → PDF renderer (requires system libs)
+# System deps for weasyprint: libpango, libcairo, libgdk-pixbuf
+# Ubuntu: sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf2.0-0
+
+# ---- Storage ----
+boto3>=1.34.0                   # AWS S3 client
+botocore>=1.34.0                # AWS core library (boto3 dependency)
+
+# ---- Configuration ----
+python-dotenv>=1.0.1            # .env file loading
+
+# ---- HTTP / External APIs ----
+httpx>=0.27.0                   # Async HTTP client (VIES API, etc.)
+zeep>=4.2.1                     # SOAP client for EU VIES VAT verification
+
+# ---- Data Handling ----
+pydantic>=2.7.0                 # Data validation and settings management
+python-multipart>=0.0.9         # Multipart form data (FastAPI file uploads)
+
+# ---- Utilities ----
+click>=8.1.7                    # CLI utilities
+tqdm>=4.66.2                    # Progress bars
+python-dateutil>=2.9.0          # Date parsing utilities
+
+# ---- Testing ----
+pytest>=8.1.1                   # Test framework
+pytest-asyncio>=0.23.6          # Async test support
+pytest-cov>=5.0.0               # Code coverage
+
+# ---- Development ----
+black>=24.3.0                   # Code formatter
+isort>=5.13.2                   # Import sorter
+mypy>=1.9.0                     # Type checker
+ruff>=0.4.1                     # Fast linter

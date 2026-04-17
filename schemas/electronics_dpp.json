@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/electronics_dpp.json",
+  "title": "Electronics DPP Schema",
+  "description": "Electronics-specific fields. Includes repairability score, spare parts, CE marking. Applies to smartphones, laptops, appliances.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "required": ["repairabilityScore", "sparePartsAvailabilityYears", "declarationOfConformity"],
+      "properties": {
+        "repairabilityScore": {"type": ["number", "null"], "minimum": 1, "maximum": 10},
+        "sparePartsAvailabilityYears": {"type": ["integer", "null"]},
+        "disassemblyInstructions": {"type": ["string", "null"]},
+        "repairManualUrl": {"type": ["string", "null"]},
+        "rohsCompliant": {"type": ["boolean", "null"]},
+        "energyLabel": {
+          "type": ["object", "null"],
+          "properties": {
+            "class": {"type": "string", "description": "A to G"},
+            "annualEnergyConsumptionKwh": {"type": ["number", "null"]}
+          }
+        },
+        "ceMarking": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": {"type": "boolean"},
+            "notifiedBodyNumber": {"type": ["string", "null"]}
+          }
+        },
+        "declarationOfConformity": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": {"type": "boolean"},
+            "documentUrl": {"type": ["string", "null"]}
+          }
+        },
+        "criticalRawMaterials": {
+          "type": "array",
+          "description": "EU Critical Raw Materials present (cobalt, lithium, REE, etc.)",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

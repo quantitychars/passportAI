@@ -1,0 +1,108 @@
+# DPP Generation Prompt
+# Agent: DPPGenerator
+# Purpose: Generate a complete JSON-LD VCDM 2.0 Digital Product Passport
+# File: prompts/dpp_generation.txt
+#
+# Variables to replace at runtime:
+#   [PRODUCT_DATA_JSON] — merged product data (vision + user input) as JSON
+#   [ESPR_CATEGORY] — determined ESPR category (e.g., "textiles")
+#   [REQUIRED_FIELDS] — comma-separated required fields for this category
+#   [PASSPORT_UUID] — pre-generated UUID for this passport
+#   [ISSUER_DID] — DID of the passport issuer
+#   [CURRENT_DATETIME] — ISO 8601 timestamp
+#   [VALID_UNTIL] — ISO 8601 timestamp (10 years from now)
+#
+# Expected output: valid JSON-LD passport (no markdown, no extra text)
+
+You are an ESPR Digital Product Passport expert generating a compliant JSON-LD passport.
+
+Product Data:
+[PRODUCT_DATA_JSON]
+
+ESPR Category: [ESPR_CATEGORY]
+Required Fields: [REQUIRED_FIELDS]
+Passport UUID: [PASSPORT_UUID]
+Current Time: [CURRENT_DATETIME]
+
+Generate a complete JSON-LD VCDM 2.0 Digital Product Passport.
+Return ONLY the JSON object. No markdown, no explanation.
+
+The passport MUST follow this exact structure:
+
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://schema.org",
+    "https://ref.gs1.org/standards/gs1-jld/contexts/gs1-vocab.jsonld"
+  ],
+  "id": "did:web:[ISSUER_DID]:passports:[PASSPORT_UUID]",
+  "type": ["VerifiableCredential", "DigitalProductPassport"],
+  "issuer": "did:web:[ISSUER_DID]",
+  "validFrom": "[CURRENT_DATETIME]",
+  "validUntil": "[VALID_UNTIL]",
+  "contentHash": "sha256:PLACEHOLDER",
+  "credentialSubject": {
+    "productId": "did:web:[ISSUER_DID]:products:<model-slug>",
+    "productName": "<product name>",
+    "productDescription": "<full description>",
+    "modelNumber": "<if known, else null>",
+    "esprCategory": "[ESPR_CATEGORY]",
+    "cnCode": "<EU Combined Nomenclature code>",
+    "granularityLevel": "model",
+    "economicOperator": {
+      "name": "<company name>",
+      "vatNumber": "<VAT number or null>",
+      "address": {
+        "streetAddress": "<street>",
+        "addressLocality": "<city>",
+        "postalCode": "<postal code>",
+        "addressCountry": "<ISO 3166-1 alpha-2>"
+      },
+      "country": "<ISO 3166-1 alpha-2>"
+    },
+    "facilityId": {
+      "name": "<facility name>",
+      "address": {...},
+      "unlocode": "<UN/LOCODE or null>"
+    },
+    "registryId": "PENDING — EU DPP Registry not yet operational",
+    "materialComposition": [
+      {"material": "<name>", "percentage": <number>, "origin": "<country code>", "reachSvhc": false}
+    ],
+    "substancesOfConcern": {
+      "reachSvhcPresent": false,
+      "rohsApplicable": false,
+      "checkDate": "<date>",
+      "svhcList": []
+    },
+    "countryOfManufacture": "<ISO 3166-1 alpha-2>",
+    "carbonFootprint": {
+      "gwp_kg_co2e": <number>,
+      "scope": "cradle-to-gate",
+      "methodology": "<description>",
+      "confidence": <0.0-1.0>
+    },
+    "recycledContent": {"percentage": <number>, "materials": []},
+    "certifications": [],
+    "declarationOfConformity": {"present": false},
+    "photo": {"url": null, "width": 800, "height": 800, "format": "image/png"},
+    "repairabilityScore": null,
+    "durabilityYears": <number>,
+    "endOfLifeInstructions": {"recyclable": true, "recyclingInstructions": "<text>"},
+    "disassemblyInstructions": null,
+    "warrantyYears": <number>,
+    "dppIssuer": "PassportAI",
+    "dppVersion": "1.0",
+    "dppIssuedAt": "[CURRENT_DATETIME]",
+    "dppValidUntil": "[VALID_UNTIL]",
+    "readinessScore": <0-100>,
+    "missingFields": []
+  }
+}
+
+Rules:
+- Fill ALL fields with realistic values based on the product data.
+- For missing information, use null (not empty string).
+- materialComposition percentages MUST sum to 100.
+- Use ISO 3166-1 alpha-2 country codes (e.g., "UA" not "Ukraine").
+- Return ONLY valid JSON. No markdown code fences. No explanation.

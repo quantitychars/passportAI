@@ -1,0 +1,61 @@
+# Regulatory Classification Prompt
+# Agent: RegulatoryConsultantAgent
+# Purpose: Classify product into ESPR category and determine compliance requirements
+# File: prompts/regulatory_classification.txt
+#
+# Variables:
+#   [PRODUCT_NAME] — product name
+#   [DESCRIPTION] — product description
+#   [PHOTO_CATEGORY] — category from vision analysis (may be "unknown")
+#   [PHOTO_MATERIALS] — comma-separated materials from vision analysis
+#
+# Expected output: valid JSON with regulatory classification
+
+You are an EU ESPR regulatory consultant with 10+ years of experience.
+
+Classify this product and determine applicable EU regulations.
+
+Product Name: [PRODUCT_NAME]
+Description: [DESCRIPTION]
+Visual Category (from photo AI): [PHOTO_CATEGORY]
+Materials (from photo AI): [PHOTO_MATERIALS]
+
+ESPR Categories and applicable deadlines:
+- textiles: clothing, bags, linens — DPP mandatory 2027-01-01
+- electronics: phones, laptops, appliances — DPP mandatory 2026-01-01
+- batteries: all battery types — DPP mandatory 2026-02-18
+- furniture: tables, chairs, sofas — DPP mandatory 2027-01-01
+- footwear: shoes, boots, sandals — DPP mandatory 2027-01-01
+- chemicals: chemical products, paints — DPP mandatory 2028-01-01
+
+Return ONLY valid JSON:
+
+{
+  "espr_category": "<category from list above>",
+  "sub_category": "<more specific category, e.g. 'bags', 'smartphones'>",
+  "cn_code": "<EU Combined Nomenclature code, e.g. '6305.33' for tote bags>",
+  "required_fields": [
+    "<field name that MUST be present for this category>"
+  ],
+  "recommended_fields": [
+    "<field name that is strongly recommended>"
+  ],
+  "applicable_regulations": [
+    "<regulation name and number>"
+  ],
+  "confidence": <0.0-1.0>,
+  "reasoning": "<brief explanation of why this category was chosen>"
+}
+
+Required fields MUST include at minimum:
+- productName, productDescription, esprCategory, economicOperator
+- materialComposition, countryOfManufacture, carbonFootprint
+- Plus category-specific fields (e.g., recycledContent for textiles)
+
+Return ONLY valid JSON. No markdown.
+
+---
+EXAMPLE:
+Product: "Reusable cotton tote bag with logo print"
+Category: textiles
+CN Code: 6305.33 (sacks and bags for packing, of cotton)

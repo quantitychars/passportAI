@@ -1,0 +1,24 @@
+{
+  "_comment": "Sample product data for testing the DPP generation pipeline",
+  "product_name": "Brand Organic Tote Bag",
+  "description": "Reusable tote bag made from 100% GOTS-certified organic cotton canvas. Screen-printed logo with water-based ink. Manufactured in Kyiv, Ukraine.",
+  "model_number": "NS-TOTE-NAT-001",
+  "gtin": "05901234123457",
+  "company_name": "Brand LLC",
+  "vat_number": "UA39482710",
+  "country_of_manufacture": "UA",
+  "material_composition": [
+    {"material": "Organic Cotton Canvas", "percentage": 98, "origin": "UA"},
+    {"material": "Polyester Thread", "percentage": 2, "origin": "PL"}
+  ],
+  "certifications": [
+    {
+      "name": "GOTS 6.0",
+      "issuer": "GOTS Certification Body Ukraine",
+      "certificate_number": "GOTS-UA-2024-Brand-001",
+      "valid_until": "2025-02-28"
+    }
+  ],
+  "storage_mode": "local",
+  "hosting_url": "http://localhost:8000"
+}
