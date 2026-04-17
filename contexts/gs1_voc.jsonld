@@ -1,0 +1,30 @@
+{
+  "@context": {
+    "_comment": "Partial GS1 vocabulary context cached for offline DPP use.",
+    "_source": "https://ref.gs1.org/standards/gs1-jld/contexts/gs1-vocab.jsonld",
+    "_cached_at": "2025-04-13",
+    "gs1": "https://ref.gs1.org/voc/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "Product": "gs1:Product",
+    "gtin": "gs1:gtin",
+    "productName": "gs1:productName",
+    "productDescription": "gs1:productDescription",
+    "brandName": "gs1:brandName",
+    "manufacturer": "gs1:manufacturer",
+    "manufacturerName": "gs1:manufacturerName",
+    "countryOfOrigin": "gs1:countryOfOrigin",
+    "countryOfManufacture": "gs1:countryOfManufacture",
+    "netWeight": "gs1:netWeight",
+    "grossWeight": "gs1:grossWeight",
+    "width": "gs1:width",
+    "height": "gs1:height",
+    "depth": "gs1:depth",
+    "materialType": "gs1:materialType",
+    "isVariantOf": "gs1:isVariantOf",
+    "gs1DigitalLinkURI": "gs1:gs1DigitalLinkURI",
+    "Organisation": "gs1:Organisation",
+    "globalLocationNumber": "gs1:globalLocationNumber",
+    "gln": "gs1:gln",
+    "partyAddress": "gs1:partyAddress"
+  }
+}

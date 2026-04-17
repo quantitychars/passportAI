@@ -1,0 +1,281 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://schema.org",
+    "https://ref.gs1.org/standards/gs1-jld/contexts/gs1-vocab.jsonld",
+    {
+      "dpp": "https://passportai.example.com/vocab#",
+      "espr": "https://ec.europa.eu/espr/vocab#",
+      "DigitalProductPassport": "dpp:DigitalProductPassport",
+      "readinessScore": "dpp:readinessScore",
+      "esprCategory": "espr:category",
+      "cnCode": "espr:cnCode",
+      "granularityLevel": "espr:granularityLevel",
+      "gwp_kg_co2e": "espr:gwpKgCo2e",
+      "facilityId": "espr:facilityId",
+      "registryId": "espr:registryId",
+      "dppIssuer": "dpp:issuer",
+      "dppVersion": "dpp:version",
+      "dppIssuedAt": "dpp:issuedAt",
+      "dppValidUntil": "dpp:validUntil",
+      "contentHash": "dpp:contentHash",
+      "missingFields": "dpp:missingFields",
+      "substancesOfConcern": "espr:substancesOfConcern",
+      "repairabilityScore": "espr:repairabilityScore",
+      "durabilityYears": "espr:durabilityYears",
+      "endOfLifeInstructions": "espr:endOfLifeInstructions",
+      "disassemblyInstructions": "espr:disassemblyInstructions",
+      "sparePartsAvailabilityYears": "espr:sparePartsAvailabilityYears",
+      "recycledContent": "espr:recycledContent",
+      "waterConsumption": "espr:waterConsumption",
+      "carbonFootprint": "espr:carbonFootprint",
+      "materialComposition": "espr:materialComposition",
+      "declarationOfConformity": "espr:declarationOfConformity",
+      "technicalDocumentation": "espr:technicalDocumentation",
+      "unlocode": "https://locode.info/"
+    }
+  ],
+  "id": "did:web:passportai.example.com:passports:3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b",
+  "type": ["VerifiableCredential", "DigitalProductPassport"],
+  "issuer": "did:web:passportai.example.com",
+  "validFrom": "2025-04-13T09:00:00Z",
+  "validUntil": "2035-04-13T09:00:00Z",
+  "contentHash": "sha256:a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4",
+  "credentialSubject": {
+    "id": "did:web:passportai.example.com:passports:3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b:subject",
+
+    "productId": "did:web:passportai.example.com:products:brand-tote-natural-001",
+    "productName": "Brand Organic Tote Bag",
+    "productDescription": "Reusable tote bag made from 100% GOTS-certified organic cotton canvas. Screen-printed logo with water-based ink. Double-stitched handles for durability. Designed and manufactured in Kyiv, Ukraine.",
+    "modelNumber": "NS-TOTE-NAT-001",
+
+    "esprCategory": "textiles",
+    "cnCode": "6305.33",
+    "granularityLevel": "model",
+
+    "economicOperator": {
+      "name": "Brand LLC",
+      "vatNumber": "UA39482710",
+      "registrationNumber": "UA-39482710-2019",
+      "address": {
+        "streetAddress": "14 Khreshchatyk Street, Office 302",
+        "addressLocality": "Kyiv",
+        "postalCode": "01001",
+        "addressCountry": "UA"
+      },
+      "country": "UA",
+      "contactEmail": "compliance@brand.com.ua",
+      "contactPhone": "+380441234567",
+      "website": "https://brand.com.ua"
+    },
+
+    "facilityId": {
+      "name": "Brand Production Studio",
+      "address": {
+        "streetAddress": "7 Fabrychna Street",
+        "addressLocality": "Kyiv",
+        "postalCode": "03067",
+        "addressCountry": "UA"
+      },
+      "unlocode": "UAKBP",
+      "gln": null,
+      "certifications": ["GOTS-Facility-UA-2024-0087"]
+    },
+
+    "registryId": "PENDING — EU DPP Registry not yet operational (expected 2026)",
+
+    "materialComposition": [
+      {
+        "material": "Organic Cotton",
+        "percentage": 98,
+        "origin": "UA",
+        "certifications": ["GOTS 6.0"],
+        "reachSvhc": false
+      },
+      {
+        "material": "Polyester Thread (stitching)",
+        "percentage": 2,
+        "origin": "PL",
+        "certifications": [],
+        "reachSvhc": false
+      }
+    ],
+
+    "substancesOfConcern": {
+      "reachSvhcPresent": false,
+      "rohsApplicable": false,
+      "checkDate": "2025-04-13",
+      "svhcList": [],
+      "notes": "Water-based screen printing ink used. No hazardous substances identified under REACH Annex XVII or SVHC candidate list (as of ECHA update 2024-01)."
+    },
+
+    "countryOfManufacture": "UA",
+    "countryOfOrigin": "UA",
+    "yearOfManufacture": 2025,
+
+    "carbonFootprint": {
+      "gwp_kg_co2e": 3.2,
+      "scope": "cradle-to-gate",
+      "methodology": "Estimated using ecoinvent 3.9 proxy factors for organic cotton textile production. Excludes use phase and end-of-life.",
+      "confidence": 0.55,
+      "dataSource": "PassportAI LCA Specialist Agent v1.0",
+      "verifiedBy": null,
+      "verificationDate": null,
+      "notes": "Low confidence due to absence of primary energy data from supplier. Recommend full LCA study for Level 3 compliance."
+    },
+
+    "recycledContent": {
+      "percentage": 0,
+      "materials": [],
+      "notes": "Virgin organic cotton. No post-consumer recycled content by design (GOTS organic certification requires virgin fibre traceability)."
+    },
+
+    "waterConsumption": {
+      "liters_per_unit": 2800,
+      "scope": "production",
+      "methodology": "Estimated based on average cotton cultivation water footprint (Water Footprint Network, 2023). Organic farming reduces pesticide runoff but does not significantly reduce water volume.",
+      "dataSource": "WFN Cotton Benchmark 2023",
+      "notes": "Significant improvement potential via drip irrigation at raw material stage."
+    },
+
+    "certifications": [
+      {
+        "name": "Global Organic Textile Standard (GOTS)",
+        "version": "6.0",
+        "issuer": "GOTS Certification Body Ukraine",
+        "certificateNumber": "GOTS-UA-2024-Brand-001",
+        "validFrom": "2024-03-01",
+        "validUntil": "2025-02-28",
+        "documentUrl": null,
+        "scope": "Organic cotton fabric + manufacturing facility"
+      },
+      {
+        "name": "OEKO-TEX Standard 100",
+        "version": "2024",
+        "issuer": "OEKO-TEX Association",
+        "certificateNumber": null,
+        "validFrom": null,
+        "validUntil": null,
+        "documentUrl": null,
+        "scope": "PENDING — recommended for EU market",
+        "status": "not_obtained"
+      }
+    ],
+
+    "declarationOfConformity": {
+      "present": false,
+      "reason": "Declaration of Conformity (DoC) is not required for textile products under current ESPR framework. Mandatory CE marking does not apply to this product category.",
+      "documentUrl": null
+    },
+
+    "technicalDocumentation": {
+      "present": true,
+      "documentType": "Product Technical File",
+      "lastUpdated": "2025-04-01",
+      "documentUrl": null,
+      "storageLocation": "internal",
+      "contents": [
+        "Material composition certificates",
+        "GOTS facility certificate",
+        "Screen printing ink safety data sheet",
+        "Production process description",
+        "Quality control records"
+      ]
+    },
+
+    "photo": {
+      "url": "http://localhost:8000/3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b/photo",
+      "width": 800,
+      "height": 800,
+      "format": "image/png",
+      "backgroundRemoved": true,
+      "standardized": true,
+      "capturedAt": "2025-04-13T09:00:00Z"
+    },
+
+    "repairabilityScore": null,
+    "repairabilityScoreNote": "Repairability score not applicable to this textile product category under current ESPR implementing acts.",
+
+    "durabilityYears": 5,
+    "durabilityTestMethod": "Estimated based on material quality and stitching standard. No accelerated aging test performed.",
+
+    "endOfLifeInstructions": {
+      "recyclable": true,
+      "recyclingInstructions": "100% cotton content makes this bag fully recyclable through textile recycling streams. Remove any non-cotton labels before recycling.",
+      "compositable": true,
+      "compostingInstructions": "Industrial compostable — cotton canvas will biodegrade in industrial composting facility within 6 months.",
+      "repairServiceAvailable": true,
+      "repairContact": "repair@brand.com.ua",
+      "takeback": false
+    },
+
+    "disassemblyInstructions": null,
+
+    "warrantyYears": 1,
+    "warrantyUrl": "https://brand.com.ua/warranty",
+
+    "userManualUrl": "https://brand.com.ua/care-instructions",
+    "careInstructions": "Machine wash 30°C, do not tumble dry, iron on medium heat, do not bleach.",
+
+    "sparePartsAvailabilityYears": null,
+    "sparePartsNote": "Spare parts not applicable to textile products.",
+
+    "packaging": {
+      "type": "paper bag",
+      "material": "recycled kraft paper 100%",
+      "recyclable": true,
+      "plasticFreePackaging": true
+    },
+
+    "supplyChain": {
+      "tier1Supplier": "Brand Production Studio, Kyiv, UA",
+      "tier2Supplier": "Organic Cotton Mill, Poltava, UA",
+      "transparencyLevel": "tier2",
+      "auditDate": "2024-09-15"
+    },
+
+    "dppIssuer": "PassportAI",
+    "dppVersion": "1.0",
+    "dppIssuedAt": "2025-04-13T09:00:00Z",
+    "dppValidUntil": "2035-04-13T09:00:00Z",
+    "dppGeneratedBy": "PassportAI v1.0 — Gemma 4 12B Q4_K_M via Ollama",
+    "dppGenerationMethod": "AI-assisted from product photo + description. Human review recommended before official use.",
+
+    "readinessScore": 72,
+    "readinessScoreBreakdown": {
+      "essential_fields": 48,
+      "recommended_fields": 16,
+      "documents_attached": 5,
+      "photo_standardized": 5,
+      "total": 72,
+      "max": 100
+    },
+
+    "missingFields": [
+      {
+        "field": "certifications[1].certificateNumber",
+        "severity": "recommended",
+        "action": "Obtain OEKO-TEX Standard 100 certification for EU market readiness",
+        "espr_deadline": "2027-01-01"
+      },
+      {
+        "field": "carbonFootprint.verifiedBy",
+        "severity": "recommended",
+        "action": "Commission third-party LCA study to raise confidence from 0.55 to >0.85",
+        "espr_deadline": "2027-01-01"
+      },
+      {
+        "field": "facilityId.gln",
+        "severity": "recommended",
+        "action": "Register facility with GS1 Ukraine to obtain GLN (Global Location Number)",
+        "espr_deadline": null
+      },
+      {
+        "field": "supplyChain.tier3Supplier",
+        "severity": "optional",
+        "action": "Extend supply chain transparency to tier 3 (cotton farm level)",
+        "espr_deadline": null
+      }
+    ]
+  }
+}

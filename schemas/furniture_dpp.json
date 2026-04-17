@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/furniture_dpp.json",
+  "title": "Furniture DPP Schema",
+  "description": "Furniture-specific fields. Covers tables, chairs, sofas, storage. DPP mandatory 2027-01-01.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "properties": {
+        "woodContent": {
+          "type": ["object", "null"],
+          "properties": {
+            "percentageByMass": {"type": ["number", "null"]},
+            "sustainabilityCertification": {"type": ["string", "null"], "description": "e.g. FSC, PEFC"},
+            "woodSpecies": {"type": ["string", "null"]}
+          }
+        },
+        "formaldehyde": {
+          "type": ["object", "null"],
+          "description": "Formaldehyde emission class (REACH concern)",
+          "properties": {
+            "emissionClass": {"type": ["string", "null"], "description": "E0, E1, or E2"},
+            "testStandard": {"type": ["string", "null"]}
+          }
+        },
+        "loadCapacityKg": {"type": ["number", "null"]},
+        "flatPackAssembly": {"type": ["boolean", "null"]},
+        "disassemblyInstructions": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

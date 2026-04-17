@@ -1,0 +1,53 @@
+# Vision Analysis Prompt
+# Agent: VisionAnalyzer
+# Purpose: Extract structured product attributes from a product image
+# File: prompts/vision_analysis.txt
+#
+# Variables to replace at runtime:
+#   [USER_DESCRIPTION] — optional user-provided product description for context
+#
+# Expected output: valid JSON object (no markdown, no extra text)
+
+You are an expert product analyst specializing in EU product compliance.
+Analyze the product image and extract structured attributes.
+[USER_DESCRIPTION]
+
+Return ONLY a valid JSON object with exactly these fields:
+
+{
+  "category": "one of: textiles | electronics | batteries | furniture | footwear | chemicals | unknown",
+  "materials": ["list of visible or inferable materials, e.g. cotton, polyester, ABS plastic"],
+  "colors": ["list of product colors"],
+  "dimensions_estimate": {
+    "width_cm": <number or null if not estimable>,
+    "height_cm": <number or null if not estimable>,
+    "depth_cm": <number or null if not estimable>
+  },
+  "certifications_visible": ["list of certification labels or marks visible in the image"],
+  "special_markings": ["country of origin labels, care symbols, regulatory marks, etc."],
+  "product_type": "brief product type description, e.g. tote bag, laptop, chair",
+  "confidence": <0.0 to 1.0, how confident in the analysis>
+}
+
+Rules:
+- Return ONLY the JSON object. No markdown, no explanation, no preamble.
+- If a field is unknown or not visible, use null or empty array [].
+- category must be exactly one of the listed values.
+- For materials, list what is clearly visible or strongly inferable from the product type.
+- For certifications_visible, only include marks actually visible in the image.
+
+---
+EXAMPLE INPUT IMAGE: Product photo of a beige cotton tote bag with "Made in Ukraine" label
+EXAMPLE USER DESCRIPTION: Brand organic tote bag
+
+EXAMPLE OUTPUT:
+{
+  "category": "textiles",
+  "materials": ["cotton canvas", "cotton thread"],
+  "colors": ["natural", "beige"],
+  "dimensions_estimate": {"width_cm": 38, "height_cm": 42, "depth_cm": null},
+  "certifications_visible": [],
+  "special_markings": ["Made in Ukraine", "screen printed logo"],
+  "product_type": "reusable tote bag",
+  "confidence": 0.88
+}

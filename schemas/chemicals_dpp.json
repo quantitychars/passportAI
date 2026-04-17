@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/chemicals_dpp.json",
+  "title": "Chemicals DPP Schema",
+  "description": "Chemical product fields. REACH-intensive category. DPP mandatory 2028-01-01.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "required": ["safetyDataSheet", "hazardClassification"],
+      "properties": {
+        "safetyDataSheet": {
+          "type": "object",
+          "required": ["present"],
+          "properties": {
+            "present": {"type": "boolean"},
+            "documentUrl": {"type": ["string", "null"]},
+            "lastUpdated": {"type": ["string", "null"], "format": "date"}
+          }
+        },
+        "hazardClassification": {
+          "type": "object",
+          "description": "CLP/GHS classification",
+          "properties": {
+            "ghsHazardClasses": {"type": "array", "items": {"type": "string"}},
+            "signalWord": {"type": ["string", "null"], "enum": ["Danger", "Warning", null]},
+            "hStatements": {"type": "array", "items": {"type": "string"}},
+            "pStatements": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "reachRegistrationNumber": {"type": ["string", "null"]},
+        "biocidalProductRegulation": {"type": ["boolean", "null"]},
+        "svhcList": {"type": "array", "items": {"type": "string"}},
+        "flashPointCelsius": {"type": ["number", "null"]},
+        "storageConditions": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/textile_dpp.json",
+  "title": "Textile DPP Schema",
+  "description": "Textile-specific fields extending universal_dpp.json. Applies to clothing, bags, linens, and other textile products.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "required": ["materialComposition", "recycledContent", "waterConsumption"],
+      "properties": {
+        "fiberComposition": {
+          "type": "array",
+          "description": "Detailed fiber breakdown per EU Textile Labelling Regulation",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fiberName": {"type": "string"},
+              "percentage": {"type": "number"},
+              "standard": {"type": ["string", "null"], "description": "e.g. GOTS, OEKO-TEX"}
+            }
+          }
+        },
+        "recycledContent": {
+          "type": "object",
+          "description": "Percentage of recycled fibers",
+          "properties": {
+            "percentage": {"type": "number", "minimum": 0, "maximum": 100},
+            "materials": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "waterConsumption": {
+          "type": ["object", "null"],
+          "description": "Water footprint per unit (key for textiles)",
+          "properties": {
+            "liters_per_unit": {"type": ["number", "null"]},
+            "methodology": {"type": ["string", "null"]}
+          }
+        },
+        "careInstructions": {"type": ["string", "null"]},
+        "durabilityTestMethod": {"type": ["string", "null"]},
+        "microplasticRelease": {
+          "type": ["object", "null"],
+          "description": "For synthetic textiles — microplastic shedding data",
+          "properties": {
+            "tested": {"type": "boolean"},
+            "mg_per_wash": {"type": ["number", "null"]}
+          }
+        }
+      }
+    }
+  }
+}

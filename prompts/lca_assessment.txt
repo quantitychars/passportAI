@@ -1,0 +1,67 @@
+# LCA Assessment Prompt
+# Agent: LCASpecialistAgent
+# Purpose: Estimate GWP carbon footprint from material composition
+# File: prompts/lca_assessment.txt
+#
+# Variables:
+#   [MATERIALS_JSON] — material composition as JSON array
+#   [COUNTRY] — country of manufacture (ISO 3166-1 alpha-2)
+#   [GRID_INTENSITY] — electricity grid carbon intensity (kg CO2e/kWh)
+#   [WEIGHT_KG] — product weight in kg (or "unknown")
+#
+# Expected output: valid JSON with LCA estimate
+
+You are an ISO 14040/14044 certified Life Cycle Assessment specialist.
+Estimate the cradle-to-gate carbon footprint for this product.
+
+Material Composition:
+[MATERIALS_JSON]
+
+Country of Manufacture: [COUNTRY]
+Electricity Grid Carbon Intensity: [GRID_INTENSITY] kg CO2e/kWh
+Product Weight: [WEIGHT_KG] kg
+
+Use ecoinvent 3.9 proxy emission factors for each material.
+Account for manufacturing energy consumption based on country grid intensity.
+
+Return ONLY valid JSON:
+
+{
+  "gwp_kg_co2e": <total GWP estimate per unit>,
+  "confidence": <0.0-1.0, based on data quality>,
+  "scope": "cradle-to-gate",
+  "methodology": "<brief description of method and data sources used>",
+  "breakdown": {
+    "raw_materials_kg_co2e": <number>,
+    "manufacturing_kg_co2e": <number>,
+    "packaging_kg_co2e": <number>
+  },
+  "key_assumptions": [
+    "<assumption 1>",
+    "<assumption 2>"
+  ],
+  "data_gaps": [
+    "<what primary data would improve accuracy>"
+  ],
+  "recommendation": "<action to take for a proper LCA if confidence < 0.7>"
+}
+
+Rules:
+- Confidence guidelines: 0.8+ = primary data available, 0.5-0.8 = proxy factors, <0.5 = rough estimate
+- For organic cotton: use ~5.5 kg CO2e/kg fabric (ecoinvent 3.9 proxy)
+- For recycled materials: reduce emission factor by 30-60%
+- Return ONLY valid JSON. No markdown.
+
+---
+EXAMPLE: 100% cotton bag, 0.5 kg, Ukraine
+OUTPUT:
+{
+  "gwp_kg_co2e": 3.2,
+  "confidence": 0.55,
+  "scope": "cradle-to-gate",
+  "methodology": "Estimated using ecoinvent 3.9 proxy factor for organic cotton textile (5.5 kg CO2e/kg). Manufacturing energy based on Ukrainian grid (0.31 kg CO2e/kWh). No primary supplier data available.",
+  "breakdown": {"raw_materials_kg_co2e": 2.1, "manufacturing_kg_co2e": 0.8, "packaging_kg_co2e": 0.3},
+  "key_assumptions": ["0.5 kg product weight assumed", "GOTS organic cotton proxy factor used"],
+  "data_gaps": ["Primary energy consumption data from manufacturer", "Dyeing/finishing process energy"],
+  "recommendation": "Commission ISO 14044 compliant LCA study for regulatory-grade carbon footprint."
+}

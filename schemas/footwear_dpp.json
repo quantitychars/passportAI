@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/footwear_dpp.json",
+  "title": "Footwear DPP Schema",
+  "description": "Footwear-specific fields. Covers shoes, boots, sandals. DPP mandatory 2027-01-01.",
+  "allOf": [{"$ref": "universal_dpp.json"}],
+  "properties": {
+    "credentialSubject": {
+      "type": "object",
+      "properties": {
+        "upperMaterial": {"type": ["string", "null"]},
+        "liningMaterial": {"type": ["string", "null"]},
+        "outsoleMaterial": {"type": ["string", "null"]},
+        "sizeRange": {"type": ["string", "null"], "description": "e.g. EU 36-46"},
+        "vegan": {"type": ["boolean", "null"]},
+        "waterResistance": {
+          "type": ["object", "null"],
+          "properties": {
+            "waterproof": {"type": "boolean"},
+            "testStandard": {"type": ["string", "null"]}
+          }
+        },
+        "adhesivesChemicals": {
+          "type": ["array", "null"],
+          "description": "Chemical adhesives used (REACH relevance)",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

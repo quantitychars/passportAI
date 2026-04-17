@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/universal_dpp.json",
+  "title": "Universal Digital Product Passport Schema",
+  "description": "Base JSON Schema for ESPR-compliant Digital Product Passports. All DPP categories extend this schema.",
+  "type": "object",
+  "required": ["@context", "id", "type", "issuer", "validFrom", "credentialSubject"],
+  "properties": {
+    "@context": {
+      "type": "array",
+      "description": "JSON-LD context URIs. Must include W3C credentials v2."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^did:web:",
+      "description": "DID:web identifier for this passport"
+    },
+    "type": {
+      "type": "array",
+      "contains": {"const": "VerifiableCredential"},
+      "description": "Must include VerifiableCredential and DigitalProductPassport"
+    },
+    "issuer": {
+      "type": "string",
+      "description": "DID of the passport issuer"
+    },
+    "validFrom": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "SHA-256 hash of credentialSubject with sorted keys"
+    },
+    "credentialSubject": {
+      "type": "object",
+      "required": [
+        "productId",
+        "productName",
+        "esprCategory",
+        "economicOperator",
+        "materialComposition",
+        "countryOfManufacture",
+        "dppIssuer",
+        "dppVersion"
+      ],
+      "properties": {
+        "productId": {"type": "string", "description": "DID:web or GS1 Digital Link"},
+        "productName": {"type": "string"},
+        "productDescription": {"type": ["string", "null"]},
+        "modelNumber": {"type": ["string", "null"]},
+        "esprCategory": {
+          "type": "string",
+          "enum": ["textiles", "electronics", "batteries", "furniture", "footwear", "chemicals", "unknown"]
+        },
+        "cnCode": {"type": ["string", "null"], "description": "EU Combined Nomenclature code"},
+        "granularityLevel": {
+          "type": "string",
+          "enum": ["model", "batch", "item"],
+          "default": "model"
+        },
+        "economicOperator": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": {"type": "string"},
+            "vatNumber": {"type": ["string", "null"]},
+            "address": {
+              "type": "object",
+              "properties": {
+                "streetAddress": {"type": ["string", "null"]},
+                "addressLocality": {"type": ["string", "null"]},
+                "postalCode": {"type": ["string", "null"]},
+                "addressCountry": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"}
+              }
+            },
+            "country": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"}
+          }
+        },
+        "materialComposition": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["material", "percentage"],
+            "properties": {
+              "material": {"type": "string"},
+              "percentage": {"type": "number", "minimum": 0, "maximum": 100},
+              "origin": {"type": ["string", "null"]},
+              "reachSvhc": {"type": ["boolean", "null"]}
+            }
+          }
+        },
+        "countryOfManufacture": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"},
+        "carbonFootprint": {
+          "type": ["object", "null"],
+          "properties": {
+            "gwp_kg_co2e": {"type": ["number", "null"]},
+            "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "methodology": {"type": ["string", "null"]}
+          }
+        },
+        "readinessScore": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
+        "dppIssuer": {"type": "string"},
+        "dppVersion": {"type": "string"},
+        "dppIssuedAt": {"type": "string", "format": "date-time"},
+        "dppValidUntil": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}
