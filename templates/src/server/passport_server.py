@@ -5,7 +5,7 @@ REST API for serving generated DPP packages and triggering generation.
 
 Endpoints:
     GET  /                     → Health check
-    GET  /health               → {"status": "ok", "model": "gemma4:12b-q4_k_m"}
+    GET  /health               → {"status": "ok", "model": "gemma4:e4b"}
     GET  /{uuid}               → passport.json (JSON-LD)
     GET  /{uuid}/photo         → photo.png (800x800)
     GET  /{uuid}/html          → passport.html (human-readable)
@@ -63,7 +63,7 @@ OUTPUT_DIR = Path(os.getenv("LOCAL_OUTPUT_DIR", "./output"))
 #     """Return server health status and model information."""
 #     return {
 #         "status": "ok",
-#         "model": os.getenv("OLLAMA_MODEL", "gemma4:12b-q4_k_m"),
+#         "model": os.getenv("OLLAMA_MODEL", "gemma4:e4b"),
 #         "storage_mode": os.getenv("STORAGE_MODE", "local"),
 #     }
 

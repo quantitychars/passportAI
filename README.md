@@ -24,7 +24,7 @@ The EU's [Ecodesign for Sustainable Products Regulation (ESPR)](https://ec.europ
 ```bash
 # 1. Install Ollama and pull the model
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma4:12b-q4_k_m
+ollama pull gemma4:e4b
 
 # 2. Install Python dependencies
 pip install -r requirements.txt
@@ -107,7 +107,7 @@ cp .env.example .env
 ```
 
 Key settings:
-- `OLLAMA_MODEL` — model name (default: `gemma4:12b-q4_k_m`)
+- `OLLAMA_MODEL` — model name (default: `gemma4:e4b`)
 - `STORAGE_MODE` — `local` or `s3`
 - `HOSTING_URL` — public URL for QR code generation
 
@@ -139,7 +139,7 @@ GET http://localhost:8000/{uuid}/html      # passport.html
 ## Requirements
 
 - Python 3.11+
-- [Ollama](https://ollama.com) with `gemma4:12b-q4_k_m` pulled
+- [Ollama](https://ollama.com) with `gemma4:e4b` pulled
 - 8GB+ RAM (16GB recommended for Gemma 4 12B)
 - GPU recommended but not required (CPU inference: ~3-5 min/passport)
 

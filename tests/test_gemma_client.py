@@ -25,7 +25,7 @@ from pathlib import Path
 def client_config():
     """Default GemmaClient configuration for tests."""
     return {
-        "model": "gemma4:12b-q4_k_m",
+        "model": "gemma4:e4b",
         "host": "http://localhost:11434",
         "timeout": 30,
     }
@@ -56,7 +56,7 @@ class TestGemmaClientInit:
         # TODO: implement after GemmaClient is complete
         # from src.core.gemma_client import GemmaClient
         # client = GemmaClient()
-        # assert client.model == os.getenv("OLLAMA_MODEL", "gemma4:12b-q4_k_m")
+        # assert client.model == os.getenv("OLLAMA_MODEL", "gemma4:e4b")
         # assert client.host == os.getenv("OLLAMA_HOST", "http://localhost:11434")
         pytest.skip("GemmaClient not yet implemented")
 

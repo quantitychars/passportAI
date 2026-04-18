@@ -110,13 +110,13 @@ passport_file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 ### 8. Environment variables via python-dotenv — never hardcode
 ```python
 # WRONG
-model = "gemma4:12b-q4_k_m"
+model = "gemma4:e4b"
 bucket = "passportai-dpp"
 
 # CORRECT
 from dotenv import load_dotenv
 load_dotenv()
-model = os.getenv("OLLAMA_MODEL", "gemma4:12b-q4_k_m")
+model = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
 bucket = os.getenv("S3_BUCKET", "passportai-dpp")
 ```
 
@@ -236,7 +236,7 @@ def sample_passport():
 
 @pytest.fixture
 def gemma_client():
-    return GemmaClient(model="gemma4:12b-q4_k_m")
+    return GemmaClient(model="gemma4:e4b")
 ```
 
 ---

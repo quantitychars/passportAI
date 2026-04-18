@@ -70,7 +70,7 @@ def check_ollama() -> bool:
     # try:
     #     models = ollama.list()
     #     model_names = [m["name"] for m in models.get("models", [])]
-    #     model = os.getenv("OLLAMA_MODEL", "gemma4:12b-q4_k_m")
+    #     model = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
     #     if model not in model_names:
     #         print(f"WARNING: Model '{model}' not found in Ollama. Run: ollama pull {model}")
     #         return False

@@ -115,7 +115,7 @@ total: int                # 0-100
 5. Contexts are cached in contexts/ for offline mode — never fetch at runtime
 6. Content hash = SHA-256 of credentialSubject JSON (sorted keys)
 7. VIES API for VAT verification: only works for EU-registered legal entities
-8. Model name in Ollama: gemma4:12b-q4_k_m
+8. Model name in Ollama: gemma4:e4b
 9. Ollama server must be running before app.py starts
 10. All file I/O uses pathlib.Path, not string paths
 
@@ -123,7 +123,7 @@ total: int                # 0-100
 
 ### GemmaClient (src/core/gemma_client.py)
 ```python
-client = GemmaClient(model="gemma4:12b-q4_k_m", host="http://localhost:11434")
+client = GemmaClient(model="gemma4:e4b", host="http://localhost:11434")
 text = client.generate(prompt: str) -> str
 text = client.think(prompt: str) -> str          # reasoning mode
 text = client.analyze_image(image_path: str, prompt: str) -> str  # multimodal
@@ -169,7 +169,7 @@ data   = agent._parse_json_response(raw_text: str) -> dict  # strips ```json ...
 ## Environment Variables (.env)
 ```
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=gemma4:12b-q4_k_m
+OLLAMA_MODEL=gemma4:e4b
 STORAGE_MODE=local                  # "local" | "s3"
 LOCAL_OUTPUT_DIR=./output
 AWS_REGION=eu-west-1

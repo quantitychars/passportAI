@@ -13,8 +13,8 @@
 Файлы: нет (только shell)
 Команды:
 ```bash
-ollama pull gemma4:12b-q4_k_m
-ollama run gemma4:12b-q4_k_m "Hello, generate JSON: {name: test}"
+ollama pull gemma4:e4b
+ollama run gemma4:e4b "Hello, generate JSON: {name: test}"
 ```
 Тест пройден: получили JSON в ответе
 
@@ -558,7 +558,7 @@ app.include_router(router)  # все /passport/{uuid} endpoints
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "gemma4:12b-q4_k_m"}
+    return {"status": "ok", "model": "gemma4:e4b"}
 
 # Монтируем Gradio прямо в FastAPI — один event loop
 ui = create_ui()

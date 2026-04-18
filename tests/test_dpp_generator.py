@@ -206,7 +206,7 @@ class TestValidate:
 
 @pytest.mark.skipif(
     True,  # Always skip until implemented
-    reason="Requires Ollama with gemma4:12b-q4_k_m — set SKIP_OLLAMA_TESTS=false"
+    reason="Requires Ollama with gemma4:e4b — set SKIP_OLLAMA_TESTS=false"
 )
 class TestGenerateFromText:
     """Integration tests requiring a running Ollama server."""
