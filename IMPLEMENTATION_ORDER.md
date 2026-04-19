@@ -1,4 +1,4 @@
-# PassportAI — Порядок реализации v2.1
+# PassportAI — Порядок реализации v2
 
 # Архитектурная ревизия: агентная система с Gemma 4 native function calling
 
