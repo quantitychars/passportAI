@@ -1,8 +1,9 @@
 # PassportAI — GitHub Copilot Instructions
 
 ## Project Overview
+
 PassportAI generates ESPR-compliant EU Digital Product Passports (DPP) from a product photo
-and description using Gemma 4 12B Q4_K_M via Ollama, running 100% offline.
+and description usingGemma 4 e:4b, running 100% offline.
 See COPILOT_CONTEXT.md for full architecture reference.
 
 ---
@@ -10,19 +11,24 @@ See COPILOT_CONTEXT.md for full architecture reference.
 ## Code Quality Rules (STRICT — never shortcut these)
 
 ### 1. No placeholder implementations
+
 NEVER write:
+
 ```python
 def generate(self, prompt: str) -> str:
     # TODO: implement
     pass
 ```
+
 ALWAYS write complete, working implementation or raise NotImplementedError with a message:
+
 ```python
 def generate(self, prompt: str) -> str:
     raise NotImplementedError("Call ollama.chat() with self.model and return response text")
 ```
 
 ### 2. Type hints are mandatory — everywhere
+
 ```python
 # WRONG
 def extract_attributes(image_path, description):
@@ -32,6 +38,7 @@ def extract_attributes(self, image_path: str | Path, description: str) -> dict[s
 ```
 
 ### 3. Every method has a docstring with Args, Returns, Raises
+
 ```python
 def generate_from_text(self, description: str) -> dict:
     """
@@ -50,6 +57,7 @@ def generate_from_text(self, description: str) -> dict:
 ```
 
 ### 4. No silent failures — always explicit error handling
+
 ```python
 # WRONG
 try:
@@ -69,7 +77,9 @@ except Exception as e:
 ```
 
 ### 5. Retry logic for all LLM calls
+
 Gemma 4 occasionally returns malformed JSON. Always implement retry:
+
 ```python
 MAX_RETRIES = 3
 
@@ -84,6 +94,7 @@ raise JSONParseError(f"Failed to get valid JSON after {MAX_RETRIES} attempts")
 ```
 
 ### 6. Logging over print statements
+
 ```python
 # WRONG
 print(f"Generated passport for {product_name}")
@@ -95,6 +106,7 @@ logger.info(f"Generated passport for {product_name} (id={passport_id})")
 ```
 
 ### 7. pathlib.Path for ALL file operations — never raw strings
+
 ```python
 # WRONG
 open("output/" + uuid + "/passport.json", "w")
@@ -108,6 +120,7 @@ passport_file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 ```
 
 ### 8. Environment variables via python-dotenv — never hardcode
+
 ```python
 # WRONG
 model = "gemma4:e4b"
@@ -121,6 +134,7 @@ bucket = os.getenv("S3_BUCKET", "passportai-dpp")
 ```
 
 ### 9. Dataclasses or TypedDict for all structured data — no raw dicts
+
 ```python
 # WRONG
 def run(self, product_data: dict) -> dict:
@@ -139,7 +153,8 @@ class ProductInput:
 def run(self, product_data: ProductInput) -> PassportPackage:
 ```
 
-### 10. Every module has __all__ and module-level logger
+### 10. Every module has **all** and module-level logger
+
 ```python
 """
 Module docstring here.
@@ -156,6 +171,7 @@ __all__ = ["ClassName", "function_name"]
 ## Agent-Specific Rules
 
 ### All agents extend BaseAgent
+
 ```python
 from agents.base_agent import BaseAgent
 
@@ -164,6 +180,7 @@ class RegulatoryConsultantAgent(BaseAgent):
 ```
 
 ### Agent run() method signature is fixed
+
 ```python
 def run(self, input_data: dict) -> dict:
     """Always returns dict with 'success': bool and 'data': dict keys"""
@@ -176,6 +193,7 @@ def run(self, input_data: dict) -> dict:
 ```
 
 ### Prompts are loaded from files — never hardcoded in Python
+
 ```python
 # WRONG
 prompt = f"Generate DPP for {description}. Return JSON."
@@ -198,6 +216,7 @@ prompt = self._load_prompt("dpp_generation").format(
 ## Testing Rules
 
 ### Every public method has at least one test
+
 ```python
 # Minimum test structure for every method:
 def test_method_name_happy_path():
@@ -211,6 +230,7 @@ def test_method_name_edge_case():
 ```
 
 ### Mock Ollama in tests — never call real model in unit tests
+
 ```python
 from unittest.mock import patch, MagicMock
 
@@ -224,6 +244,7 @@ def test_generate_returns_string(mock_chat):
 ```
 
 ### Use fixtures for test data
+
 ```python
 # tests/conftest.py
 import pytest
@@ -255,7 +276,9 @@ def gemma_client():
 ---
 
 ## File Header Template
+
 Every Python file must start with:
+
 ```python
 """
 <module_name>.py — PassportAI

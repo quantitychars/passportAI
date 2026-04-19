@@ -1,10 +1,12 @@
 # PassportAI — Copilot Context
 
 ## One-line description
-PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a product photo + description using Gemma 4 12B Q4_K_M via Ollama, running 100% offline.
+
+PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a product photo + description usingGemma 4 e:4b, running 100% offline.
 
 ## Tech Stack
-- Model: Gemma 4 12B Q4_K_M via Ollama (local, no cloud)
+
+- Model:Gemma 4 e:4b (local, no cloud)
 - UI: Gradio (localhost:7860)
 - API: FastAPI (localhost:8000)
 - Photo processing: rembg (background removal, 800x800 white bg)
@@ -13,6 +15,7 @@ PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a produ
 - Output: JSON-LD VCDM 2.0 (Level 2), HTML page, QR code, Gap Report PDF
 
 ## Project Structure (flat view)
+
 ```
 app.py                          # Entry point: starts Gradio + FastAPI
 src/core/gemma_client.py        # Ollama wrapper: generate(), analyze_image(), think()
@@ -58,6 +61,7 @@ output/{uuid}/qr.png            # QR code (generated LAST after URL known)
 ```
 
 ## Agent Pipeline (12 steps, in order)
+
 ```
 1.  Input validation + UUID generation + output/{uuid}/ creation
 2.  Vision Agent → product attributes JSON          (parallel with step 3)
@@ -77,6 +81,7 @@ output/{uuid}/qr.png            # QR code (generated LAST after URL known)
 ## Key Data Types
 
 ### ProductInput
+
 ```python
 image_path: str
 description: str
@@ -87,6 +92,7 @@ hosting_url: str | None   # Custom URL if self-hosted
 ```
 
 ### PassportPackage
+
 ```python
 passport_id: str          # UUID
 passport_json: dict       # Full JSON-LD VCDM 2.0
@@ -99,6 +105,7 @@ readiness_score: int      # 0-100
 ```
 
 ### DPPReadinessScore
+
 ```python
 essential_fields: int     # max 60 points
 recommended_fields: int   # max 25 points
@@ -108,9 +115,10 @@ total: int                # 0-100
 ```
 
 ## Critical Rules for Copilot
+
 1. QR is generated LAST — it needs passport_url which is only known after storage
 2. GemmaClient.analyze_image() uses Ollama multimodal (images parameter)
-3. All agent responses are JSON — use _parse_json_response() to strip markdown
+3. All agent responses are JSON — use \_parse_json_response() to strip markdown
 4. Storage is pluggable — never hardcode S3 or local paths
 5. Contexts are cached in contexts/ for offline mode — never fetch at runtime
 6. Content hash = SHA-256 of credentialSubject JSON (sorted keys)
@@ -122,6 +130,7 @@ total: int                # 0-100
 ## Key Functions Reference
 
 ### GemmaClient (src/core/gemma_client.py)
+
 ```python
 client = GemmaClient(model="gemma4:e4b", host="http://localhost:11434")
 text = client.generate(prompt: str) -> str
@@ -130,6 +139,7 @@ text = client.analyze_image(image_path: str, prompt: str) -> str  # multimodal
 ```
 
 ### DPP Generator (src/core/dpp_generator.py)
+
 ```python
 gen = DPPGenerator(gemma_client)
 passport = gen.generate_from_text(description: str) -> dict
@@ -139,6 +149,7 @@ valid, errors = gen.validate(passport: dict) -> tuple[bool, list]
 ```
 
 ### StorageProvider (src/storage/base.py)
+
 ```python
 # Abstract interface — both local and S3 implement this
 url = provider.save_package(passport_id: str, files: dict[str, Path]) -> str
@@ -146,13 +157,15 @@ url = provider.get_public_url(passport_id: str, filename: str) -> str
 ```
 
 ### BaseAgent (agents/base_agent.py)
-```python
+
+````python
 agent = SomeAgent(gemma_client)
 result = agent.run(**kwargs) -> dict        # abstract
 data   = agent._parse_json_response(raw_text: str) -> dict  # strips ```json ... ```
-```
+````
 
 ## JSON-LD VCDM 2.0 Structure
+
 ```json
 {
   "@context": ["https://www.w3.org/ns/credentials/v2", "..."],
@@ -167,6 +180,7 @@ data   = agent._parse_json_response(raw_text: str) -> dict  # strips ```json ...
 ```
 
 ## Environment Variables (.env)
+
 ```
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=gemma4:e4b
@@ -183,6 +197,7 @@ VIES_API_URL=https://ec.europa.eu/taxation_customs/vies/services/checkVatService
 ```
 
 ## ESPR Category → Schema Mapping
+
 ```
 textiles      → schemas/textile_dpp.json
 batteries     → schemas/battery_dpp.json
@@ -194,6 +209,7 @@ chemicals     → schemas/chemicals_dpp.json
 ```
 
 ## Dependencies (key packages)
+
 ```
 ollama>=0.2.0          # Python SDK for Ollama
 fastapi>=0.110.0       # REST API server
@@ -211,6 +227,7 @@ zeep>=4.2.1            # SOAP client for VIES API
 ```
 
 ## Error Handling Patterns
+
 ```python
 # Always wrap Ollama calls
 try:
@@ -226,6 +243,7 @@ if not data:
 ```
 
 ## File Naming Conventions
+
 ```
 output/{uuid}/passport.json      ← never rename
 output/{uuid}/photo.png          ← always PNG, always 800x800

@@ -238,7 +238,7 @@
     "dppVersion": "1.0",
     "dppIssuedAt": "2025-04-13T09:00:00Z",
     "dppValidUntil": "2035-04-13T09:00:00Z",
-    "dppGeneratedBy": "PassportAI v1.0 — Gemma 4 12B Q4_K_M via Ollama",
+    "dppGeneratedBy": "PassportAI v1.0 —Gemma 4 e:4b",
     "dppGenerationMethod": "AI-assisted from product photo + description. Human review recommended before official use.",
 
     "readinessScore": 72,
