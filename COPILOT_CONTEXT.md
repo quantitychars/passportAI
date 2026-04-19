@@ -2,11 +2,11 @@
 
 ## One-line description
 
-PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a product photo + description usingGemma 4 e:4b, running 100% offline.
+PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a product photo + description using Gemma 4 E4B via Ollama, running 100% offline.
 
 ## Tech Stack
 
-- Model:Gemma 4 e:4b (local, no cloud)
+- Model: Gemma 4 E4B (gemma4:e4b) via Ollama (local, no cloud)
 - UI: Gradio (localhost:7860)
 - API: FastAPI (localhost:8000)
 - Photo processing: rembg (background removal, 800x800 white bg)
@@ -18,9 +18,11 @@ PassportAI generates ESPR-compliant Digital Product Passports (DPP) from a produ
 
 ```
 app.py                          # Entry point: starts Gradio + FastAPI
-src/core/gemma_client.py        # Ollama wrapper: generate(), analyze_image(), think()
+src/core/gemma_client.py        # Ollama wrapper: # generate(), think(),
+                                    analyze_image(), call_tool(), _parse_json_fallback()
 src/core/dpp_generator.py       # JSON-LD VCDM 2.0 passport builder
-src/core/vision.py              # Photo → product attributes via Gemma 4 vision
+agents/vision_agent.py          # Photo → product attributes via Gemma 4 vision
+                                    (extends BaseAgent)
 src/core/gap_report.py          # Compliance gap analysis → PDF
 src/processing/photo.py         # rembg background removal → 800x800 PNG
 src/processing/qr.py            # QR code generation (LAST step, needs URL)
@@ -29,7 +31,8 @@ src/storage/local.py            # Local file storage implementation
 src/storage/aws_s3.py           # AWS S3 eu-west-1 implementation
 src/server/passport_server.py   # FastAPI: GET /{uuid}, GET /{uuid}/photo
 src/ui/gradio_app.py            # Gradio UI with progress bar
-agents/base_agent.py            # BaseAgent class with _parse_json_response()
+agents/base_agent.py            # BaseAgent: run() [abstract],
+                                    call_tool(),run_verified_task(),_parse_json_fallback()
 agents/regulatory_consultant.py # ESPR category + required fields
 agents/legal_agent.py           # DoC, REACH, RoHS, VAT verification
 agents/lca_specialist.py        # GWP/LCA estimation from BOM
@@ -118,7 +121,7 @@ total: int                # 0-100
 
 1. QR is generated LAST — it needs passport_url which is only known after storage
 2. GemmaClient.analyze_image() uses Ollama multimodal (images parameter)
-3. All agent responses are JSON — use \_parse_json_response() to strip markdown
+3. All agents use call_tool() for structured output. \_parse_json_fallback() is automatic fallback — never call manually. RegulatoryConsultant and LegalAgent use run_verified_task() (two-phase: think→call_tool).
 4. Storage is pluggable — never hardcode S3 or local paths
 5. Contexts are cached in contexts/ for offline mode — never fetch at runtime
 6. Content hash = SHA-256 of credentialSubject JSON (sorted keys)
@@ -126,6 +129,9 @@ total: int                # 0-100
 8. Model name in Ollama: gemma4:e4b
 9. Ollama server must be running before app.py starts
 10. All file I/O uses pathlib.Path, not string paths
+11. Use call_tool() for structured output, run_verified_task() for regulatory agents
+
+# \_parse_json_fallback() lives in BaseAgent as fallback — never call manually
 
 ## Key Functions Reference
 
@@ -133,9 +139,11 @@ total: int                # 0-100
 
 ```python
 client = GemmaClient(model="gemma4:e4b", host="http://localhost:11434")
-text = client.generate(prompt: str) -> str
-text = client.think(prompt: str) -> str          # reasoning mode
-text = client.analyze_image(image_path: str, prompt: str) -> str  # multimodal
+text   = client.generate(prompt: str) -> str
+text   = client.think(prompt: str) -> str                                    # reasoning mode (think=True)
+text   = client.analyze_image(image_path: str, prompt: str) -> str          # multimodal vision
+data   = client.call_tool(prompt: str, tools: list[dict], system_prompt: str | None) -> dict  # native function calling
+data   = client._parse_json_fallback(raw: str) -> dict                      # fallback: parse JSON from text
 ```
 
 ### DPP Generator (src/core/dpp_generator.py)
@@ -158,11 +166,13 @@ url = provider.get_public_url(passport_id: str, filename: str) -> str
 
 ### BaseAgent (agents/base_agent.py)
 
-````python
+```python
 agent = SomeAgent(gemma_client)
 result = agent.run(**kwargs) -> dict        # abstract
-data   = agent._parse_json_response(raw_text: str) -> dict  # strips ```json ... ```
-````
+data   = agent.call_tool(prompt: str, tools: list[dict]) -> dict            # native function calling
+data   = agent.run_verified_task(prompt: str, tools: list[dict]) -> dict   # two-phase: think→call_tool
+data   = agent._parse_json_fallback(raw: str) -> dict                      # fallback only
+```
 
 ## JSON-LD VCDM 2.0 Structure
 
@@ -236,10 +246,11 @@ except ollama.ResponseError as e:
     # Ollama server down or model not found
     raise RuntimeError(f"Ollama error: {e}") from e
 
-# Always validate JSON before returning
-data = agent._parse_json_response(raw)
-if not data:
-    raise ValueError("Agent returned invalid JSON")
+# Preferred: use call_tool() — returns dict directly, no manual parsing needed
+data = agent.call_tool(prompt, tools)
+
+# Fallback only (if model returns plain text instead of tool_calls):
+# data = agent._parse_json_fallback(raw)
 ```
 
 ## File Naming Conventions

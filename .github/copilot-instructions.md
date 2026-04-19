@@ -3,7 +3,7 @@
 ## Project Overview
 
 PassportAI generates ESPR-compliant EU Digital Product Passports (DPP) from a product photo
-and description usingGemma 4 e:4b, running 100% offline.
+and description using Gemma 4 E4B (gemma4:e4b) via Ollama, running 100% offline.
 See COPILOT_CONTEXT.md for full architecture reference.
 
 ---
@@ -84,11 +84,11 @@ Gemma 4 occasionally returns malformed JSON. Always implement retry:
 MAX_RETRIES = 3
 
 for attempt in range(MAX_RETRIES):
-    response = self.client.generate(prompt)
-    parsed = self._parse_json_response(response)
-    if parsed:
-        return parsed
-    logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES}: invalid JSON, retrying...")
+    # Preferred: use call_tool() — handles retry and JSON parsing internally
+    result = self.call_tool(prompt, tools, system_prompt)
+    if result:
+        return result
+    logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES}: empty result, retrying...")
 
 raise JSONParseError(f"Failed to get valid JSON after {MAX_RETRIES} attempts")
 ```
@@ -176,7 +176,9 @@ __all__ = ["ClassName", "function_name"]
 from agents.base_agent import BaseAgent
 
 class RegulatoryConsultantAgent(BaseAgent):
-    # NEVER duplicate _parse_json_response() — it lives in BaseAgent only
+    # Use call_tool() for structured output — it lives in BaseAgent
+    # Use run_verified_task() for regulatory agents (RegulatoryConsultant, LegalAgent)
+    # _parse_json_fallback() is automatic fallback — never call manually
 ```
 
 ### Agent run() method signature is fixed
