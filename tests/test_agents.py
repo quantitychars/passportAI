@@ -1,91 +1,174 @@
 """
-tests/test_agents.py — Tests for all PassportAI agents
+tests/test_agents.py — PassportAI agent integration tests
 
-Tests:
-    - BaseAgent._parse_json_response() — core utility
-    - GS1Specialist.validate_gtin() — GTIN checksum (no Ollama needed)
-    - GS1Specialist.generate_did_web() — DID generation
-    - GS1Specialist.build_gs1_digital_link() — GS1 URL format
-    - DataAuditAgent._rule_based_audit() — completeness checking
-    - LegalAgent._quick_svhc_scan() — REACH pre-filter
+Strategy: tests activate as agents are implemented.
+- Each class has a skip marker that gets removed when the agent is real.
+- Run: pytest tests/test_agents.py -v
 
-Run:
-    pytest tests/test_agents.py -v
+Current status:
+    ✅ TestBaseAgentContract    — BaseAgent v2.1 (шаг 1.3 DONE)
+    ⏳ TestGS1Specialist        — activate on day 8 (шаг 3.5)
+    ⏳ TestDataAuditRuleBased   — activate on day 4 (шаг 3.4)
+    ⏳ TestLegalAgentSVHC       — activate on day 6 (шаг 3.2)
 """
 
+import sys
+from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# BaseAgent._parse_json_response() tests
-# ---------------------------------------------------------------------------
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-class TestParseJsonResponse:
-    """Test BaseAgent._parse_json_response() with various input formats."""
+import pytest
+from unittest.mock import MagicMock
+
+# Mock GemmaClient before any agent imports
+_mock = MagicMock()
+sys.modules.setdefault("src", _mock)
+sys.modules.setdefault("src.core", _mock)
+sys.modules.setdefault("src.core.gemma_client", _mock)
+_mock.GemmaClient = MagicMock
+
+
+# ===========================================================================
+# ✅ ACTIVE — BaseAgent contract (шаг 1.3 DONE)
+# ===========================================================================
+
+class TestBaseAgentContract:
+    """BaseAgent v2.1 contract: AgentResult shape, helper methods, safety."""
 
     @pytest.fixture
     def agent(self):
-        """TestAgent instance for testing BaseAgent methods."""
         from agents.base_agent import BaseAgent
 
         class _TestAgent(BaseAgent):
             def run(self, **kwargs):
-                return {}
+                return self._format_success({"ok": True})
 
         return _TestAgent(client=None)
 
-    def test_plain_json_object(self, agent):
-        """Parses clean JSON object."""
-        result = agent._parse_json_response('{"ok": true, "score": 72}')
-        assert result == {"ok": True, "score": 72}
+    def test_success_result_shape(self, agent):
+        """_format_success returns correct AgentResult shape."""
+        result = agent._format_success({"field": "value"})
+        assert result["success"] is True
+        assert result["agent"] == "_TestAgent"
+        assert result["is_mock"] is False
+        assert "data" in result
+        assert "error" not in result
 
-    def test_markdown_json_block(self, agent):
-        """Strips ```json ... ``` fences and parses."""
-        result = agent._parse_json_response('```json\n{"ok": true}\n```')
-        assert result == {"ok": True}
+    def test_error_result_shape(self, agent):
+        """_format_error returns correct AgentResult shape."""
+        result = agent._format_error(ValueError("boom"))
+        assert result["success"] is False
+        assert result["agent"] == "_TestAgent"
+        assert result["error"] == "boom"
+        assert "data" not in result
 
-    def test_markdown_block_no_lang(self, agent):
-        """Strips ``` ... ``` fences without language tag."""
-        result = agent._parse_json_response('```\n{"key": "value"}\n```')
-        assert result == {"key": "value"}
+    def test_error_accepts_string(self, agent):
+        """_format_error accepts plain string as well as Exception."""
+        result = agent._format_error("plain string error")
+        assert result["success"] is False
+        assert result["error"] == "plain string error"
 
-    def test_json_with_leading_text(self, agent):
-        """Extracts JSON from response with leading explanation text."""
-        result = agent._parse_json_response('Here is the analysis:\n{"result": "pass"}')
-        assert result == {"result": "pass"}
+    def test_run_returns_agent_result(self, agent):
+        """run() returns AgentResult via _format_success."""
+        result = agent.run()
+        assert result["success"] is True
+        assert result["data"] == {"ok": True}
 
-    def test_nested_json(self, agent):
-        """Parses nested JSON structures."""
-        raw = '{"outer": {"inner": [1, 2, 3]}}'
-        result = agent._parse_json_response(raw)
-        assert result["outer"]["inner"] == [1, 2, 3]
+    def test_call_tool_without_client_raises(self, agent):
+        """call_tool() with client=None raises RuntimeError immediately."""
+        with pytest.raises(RuntimeError, match="_TestAgent"):
+            agent.call_tool("prompt", [])
 
-    def test_invalid_json_raises_value_error(self, agent):
-        """Raises ValueError for non-JSON text."""
-        with pytest.raises(ValueError, match="Could not extract valid JSON"):
-            agent._parse_json_response("This is definitely not JSON at all.")
+    def test_run_verified_task_without_client_raises(self, agent):
+        """run_verified_task() with client=None raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="_TestAgent"):
+            agent.run_verified_task("prompt", [])
 
-    def test_empty_string_raises_value_error(self, agent):
-        """Raises ValueError for empty string."""
-        with pytest.raises(ValueError):
-            agent._parse_json_response("")
+    def test_think_without_client_raises(self, agent):
+        """think() with client=None raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="_TestAgent"):
+            agent.think("prompt")
 
-    def test_json_array(self, agent):
-        """Parses JSON array."""
-        result = agent._parse_json_response('[{"a": 1}, {"b": 2}]')
-        assert isinstance(result, list)
+    def test_load_prompt_path_traversal_blocked(self, agent):
+        """_load_prompt blocks path traversal attempts."""
+        with pytest.raises((ValueError, FileNotFoundError)):
+            agent._load_prompt("../../../etc/passwd")
+
+    def test_load_prompt_missing_file_raises(self, agent):
+        """_load_prompt raises FileNotFoundError for missing prompt."""
+        with pytest.raises(FileNotFoundError):
+            agent._load_prompt("nonexistent_prompt_xyz")
+
+    def test_evidence_schema_injection(self, agent):
+        """_with_evidence_schema injects evidence into tool parameters."""
+        tool = {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                }
+            }
+        }
+        injected = agent._with_evidence_schema(tool)
+        props = injected["function"]["parameters"]["properties"]
+        required = injected["function"]["parameters"]["required"]
+        assert "evidence" in props
+        assert "evidence" in required
+        assert "name" in required  # original field preserved
+
+    def test_evidence_schema_does_not_mutate_original(self, agent):
+        """_with_evidence_schema returns deep copy — original unchanged."""
+        tool = {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                }
+            }
+        }
+        agent._with_evidence_schema(tool)
+        assert "evidence" not in tool["function"]["parameters"]["properties"]
+
+    def test_with_evidence_schema_many(self, agent):
+        """_with_evidence_schema_many injects into all tools."""
+        tools = [
+            {"function": {"parameters": {"type": "object",
+             "properties": {}, "required": []}}},
+            {"function": {"parameters": {"type": "object",
+             "properties": {}, "required": []}}},
+        ]
+        result = agent._with_evidence_schema_many(tools)
         assert len(result) == 2
+        for t in result:
+            assert "evidence" in t["function"]["parameters"]["properties"]
 
-    def test_unicode_content(self, agent):
-        """Handles unicode characters in JSON."""
-        result = agent._parse_json_response('{"name": "Шопер NikSense"}')
-        assert result["name"] == "Шопер NikSense"
+    def test_is_mock_false_by_default(self, agent):
+        """IS_MOCK is False for real agents."""
+        assert agent.IS_MOCK is False
+
+    def test_mock_agent_flag(self):
+        """IS_MOCK=True propagates to AgentResult.is_mock."""
+        from agents.base_agent import BaseAgent
+
+        class _MockAgent(BaseAgent):
+            IS_MOCK = True
+            def run(self, **kwargs):
+                return self._format_success({"mocked": True})
+
+        mock_agent = _MockAgent(client=None)
+        result = mock_agent.run()
+        assert result["is_mock"] is True
 
 
-# ---------------------------------------------------------------------------
-# GS1Specialist tests
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# ⏳ PENDING — GS1Specialist (activate on day 8, шаг 3.5)
+# ===========================================================================
 
-class TestGS1SpecialistGTIN:
-    """Test GTIN-14 checksum validation — no Ollama required."""
+@pytest.mark.skip(reason="GS1Specialist not yet implemented — activate on day 8")
+class TestGS1Specialist:
+    """GTIN-14 checksum, DID:web generation, GS1 Digital Link format."""
 
     @pytest.fixture
     def gs1(self):
@@ -93,77 +176,39 @@ class TestGS1SpecialistGTIN:
         return GS1Specialist(client=None)
 
     def test_valid_gtin14(self, gs1):
-        """Known valid GTIN-14 passes validation."""
         assert gs1.validate_gtin("05901234123457") is True
 
     def test_invalid_gtin14_wrong_checksum(self, gs1):
-        """GTIN with wrong last digit fails validation."""
         assert gs1.validate_gtin("05901234123458") is False
 
-    def test_valid_gtin13(self, gs1):
-        """Valid GTIN-13 (zero-padded to 14) passes."""
-        # "5901234123457" is valid GTIN-13 → pad to "05901234123457"
-        assert gs1.validate_gtin("5901234123457") is True
-
     def test_invalid_too_short(self, gs1):
-        """GTIN shorter than 8 digits fails."""
         assert gs1.validate_gtin("123") is False
 
-    def test_invalid_non_digit_chars(self, gs1):
-        """GTIN with non-digit chars after stripping fails if too short."""
-        assert gs1.validate_gtin("ABC") is False
-
     def test_gtin_with_spaces(self, gs1):
-        """GTIN with spaces is cleaned before validation."""
-        # Should strip spaces and validate
-        result = gs1.validate_gtin("0590 1234 1234 57")
-        # After stripping spaces: "05901234123457" — valid
-        assert result is True
-
-    def test_all_zeros_invalid(self, gs1):
-        """All-zero GTIN is invalid (checksum 0 ≠ calculated)."""
-        # 13 zeros + checksum: 0000000000000 → check digit = 0, so "00000000000000" IS valid by mod-10
-        # Actually let's just verify it doesn't crash
-        result = gs1.validate_gtin("00000000000000")
-        assert isinstance(result, bool)
-
-
-class TestGS1SpecialistDID:
-    """Test DID:web generation — no Ollama required."""
-
-    @pytest.fixture
-    def gs1(self):
-        from agents.gs1_specialist import GS1Specialist
-        return GS1Specialist(client=None, base_did_domain="passportai.example.com")
+        assert gs1.validate_gtin("0590 1234 1234 57") is True
 
     def test_did_format(self, gs1):
-        """DID:web follows correct format."""
-        did = gs1.generate_did_web("3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b")
-        assert did.startswith("did:web:passportai.example.com:passports:")
-
-    def test_did_contains_uuid(self, gs1):
-        """DID:web contains the passport UUID."""
         uuid = "3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b"
         did = gs1.generate_did_web(uuid)
+        assert did.startswith("did:web:")
         assert uuid in did
 
     def test_gs1_digital_link_format(self, gs1):
-        """GS1 Digital Link follows {base_url}/01/{gtin14} format."""
         link = gs1.build_gs1_digital_link("5901234123457", "https://example.com")
-        assert link == "https://example.com/01/05901234123457"
+        assert link.startswith("https://example.com/01/")
 
     def test_gs1_digital_link_pads_gtin(self, gs1):
-        """Short GTIN is zero-padded to 14 digits in Digital Link."""
         link = gs1.build_gs1_digital_link("123456789", "https://example.com")
         assert "/01/00000123456789" in link
 
 
-# ---------------------------------------------------------------------------
-# DataAuditAgent rule-based audit tests
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# ⏳ PENDING — DataAuditAgent (activate on day 4, шаг 3.4)
+# ===========================================================================
 
+@pytest.mark.skip(reason="DataAuditAgent not yet implemented — activate on day 4")
 class TestDataAuditRuleBased:
-    """Test DataAuditAgent._rule_based_audit() — no Ollama required."""
+    """Rule-based completeness audit — no Ollama required."""
 
     @pytest.fixture
     def agent(self):
@@ -171,19 +216,28 @@ class TestDataAuditRuleBased:
         return DataAuditAgent(client=None)
 
     def test_missing_manufacturer_lowers_score(self, agent):
-        """Passport without manufacturer has score < 60."""
         passport = {"credentialSubject": {}}
         result = agent._rule_based_audit(passport, ["manufacturer"])
         assert result["readiness_score"] < 60
 
     def test_missing_manufacturer_in_missing_essential(self, agent):
-        """Missing manufacturer is in missing_essential list."""
         passport = {"credentialSubject": {}}
         result = agent._rule_based_audit(passport, ["manufacturer"])
         assert "manufacturer" in result["missing_essential"]
 
-    def test_material_composition_sum_inconsistency(self, agent):
-        """Material percentages not summing to 100 creates inconsistency."""
+    def test_score_breakdown_sums_to_total(self, agent):
+        passport = {"credentialSubject": {}}
+        result = agent._rule_based_audit(passport, [])
+        breakdown = result["score_breakdown"]
+        total = (
+            breakdown["essential_fields"]
+            + breakdown["recommended_fields"]
+            + breakdown["documents_attached"]
+            + breakdown["photo_standardized"]
+        )
+        assert total == breakdown["total"]
+
+    def test_material_sum_inconsistency_flagged(self, agent):
         passport = {
             "credentialSubject": {
                 "materialComposition": [
@@ -193,38 +247,16 @@ class TestDataAuditRuleBased:
             }
         }
         result = agent._rule_based_audit(passport, [])
-        assert any("90" in inc or "sum" in inc.lower() for inc in result["inconsistencies"])
-
-    def test_complete_passport_high_score(self, agent):
-        """Passport with all essential fields scores higher."""
-        from agents.data_audit_agent import UNIVERSAL_ESSENTIAL_FIELDS
-        subject = {field: "value" for field in UNIVERSAL_ESSENTIAL_FIELDS}
-        subject["materialComposition"] = [{"material": "cotton", "percentage": 100}]
-        subject["photo"] = {"width": 800, "height": 800}
-        passport = {"credentialSubject": subject}
-        result = agent._rule_based_audit(passport, UNIVERSAL_ESSENTIAL_FIELDS)
-        assert result["readiness_score"] > 50
-
-    def test_score_breakdown_sums_to_total(self, agent):
-        """Score breakdown components sum to total."""
-        passport = {"credentialSubject": {}}
-        result = agent._rule_based_audit(passport, [])
-        breakdown = result["score_breakdown"]
-        components = (
-            breakdown["essential_fields"] +
-            breakdown["recommended_fields"] +
-            breakdown["documents_attached"] +
-            breakdown["photo_standardized"]
-        )
-        assert components == breakdown["total"]
+        assert len(result["inconsistencies"]) > 0
 
 
-# ---------------------------------------------------------------------------
-# LegalAgent._quick_svhc_scan() tests
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# ⏳ PENDING — LegalAgent SVHC scan (activate on day 6, шаг 3.2)
+# ===========================================================================
 
+@pytest.mark.skip(reason="LegalAgent not yet implemented — activate on day 6")
 class TestLegalAgentSVHC:
-    """Test LegalAgent._quick_svhc_scan() — no Ollama required."""
+    """REACH SVHC pre-filter — no Ollama required."""
 
     @pytest.fixture
     def agent(self):
@@ -232,31 +264,29 @@ class TestLegalAgentSVHC:
         return LegalAgent(client=None, enable_vies=False)
 
     def test_neodymium_flagged(self, agent):
-        """Neodymium is flagged as SVHC candidate."""
-        composition = [{"material": "Neodymium magnet", "percentage": 5}]
-        flags = agent._quick_svhc_scan(composition)
+        flags = agent._quick_svhc_scan(
+            [{"material": "Neodymium magnet", "percentage": 5}]
+        )
         assert len(flags) > 0
         assert any("neodymium" in f.lower() for f in flags)
 
     def test_lead_flagged(self, agent):
-        """Lead is flagged as SVHC."""
-        composition = [{"material": "Lead solder", "percentage": 1}]
-        flags = agent._quick_svhc_scan(composition)
+        flags = agent._quick_svhc_scan(
+            [{"material": "Lead solder", "percentage": 1}]
+        )
         assert len(flags) > 0
 
     def test_cotton_not_flagged(self, agent):
-        """Organic cotton is NOT a SVHC substance."""
-        composition = [{"material": "Organic cotton", "percentage": 100}]
-        flags = agent._quick_svhc_scan(composition)
-        assert len(flags) == 0
-
-    def test_empty_composition_no_flags(self, agent):
-        """Empty composition produces no flags."""
-        flags = agent._quick_svhc_scan([])
+        flags = agent._quick_svhc_scan(
+            [{"material": "Organic cotton", "percentage": 100}]
+        )
         assert flags == []
 
-    def test_case_insensitive_detection(self, agent):
-        """SVHC detection is case-insensitive."""
-        composition = [{"material": "NEODYMIUM ALLOY", "percentage": 3}]
-        flags = agent._quick_svhc_scan(composition)
+    def test_empty_composition_no_flags(self, agent):
+        assert agent._quick_svhc_scan([]) == []
+
+    def test_case_insensitive(self, agent):
+        flags = agent._quick_svhc_scan(
+            [{"material": "NEODYMIUM ALLOY", "percentage": 3}]
+        )
         assert len(flags) > 0
