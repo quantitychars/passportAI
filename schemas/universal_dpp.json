@@ -1,114 +1,1879 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://passportai.example.com/schemas/universal_dpp.json",
-  "title": "Universal Digital Product Passport Schema",
-  "description": "Base JSON Schema for ESPR-compliant Digital Product Passports. All DPP categories extend this schema.",
+  "title": "Digital Product Passport Schema v3",
   "type": "object",
-  "required": ["@context", "id", "type", "issuer", "validFrom", "credentialSubject"],
+  "additionalProperties": false,
+  "required": ["dpp"],
   "properties": {
-    "@context": {
-      "type": "array",
-      "description": "JSON-LD context URIs. Must include W3C credentials v2."
-    },
-    "id": {
-      "type": "string",
-      "pattern": "^did:web:",
-      "description": "DID:web identifier for this passport"
-    },
-    "type": {
-      "type": "array",
-      "contains": {"const": "VerifiableCredential"},
-      "description": "Must include VerifiableCredential and DigitalProductPassport"
-    },
-    "issuer": {
-      "type": "string",
-      "description": "DID of the passport issuer"
-    },
-    "validFrom": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "validUntil": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "contentHash": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "SHA-256 hash of credentialSubject with sorted keys"
-    },
-    "credentialSubject": {
+    "dpp": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
-        "productId",
-        "productName",
-        "esprCategory",
-        "economicOperator",
-        "materialComposition",
-        "countryOfManufacture",
-        "dppIssuer",
-        "dppVersion"
+        "schemaVersion",
+        "passportId",
+        "productGroup",
+        "sectorProfile",
+        "regulatedCore",
+        "voluntaryEsg",
+        "systemMetadata"
       ],
       "properties": {
-        "productId": {"type": "string", "description": "DID:web or GS1 Digital Link"},
-        "productName": {"type": "string"},
-        "productDescription": {"type": ["string", "null"]},
-        "modelNumber": {"type": ["string", "null"]},
-        "esprCategory": {
+        "schemaVersion": {
           "type": "string",
-          "enum": ["textiles", "electronics", "batteries", "furniture", "footwear", "chemicals", "unknown"]
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
         },
-        "cnCode": {"type": ["string", "null"], "description": "EU Combined Nomenclature code"},
-        "granularityLevel": {
+        "passportId": {
           "type": "string",
-          "enum": ["model", "batch", "item"],
-          "default": "model"
+          "minLength": 1
         },
-        "economicOperator": {
-          "type": "object",
-          "required": ["name"],
-          "properties": {
-            "name": {"type": "string"},
-            "vatNumber": {"type": ["string", "null"]},
-            "address": {
-              "type": "object",
-              "properties": {
-                "streetAddress": {"type": ["string", "null"]},
-                "addressLocality": {"type": ["string", "null"]},
-                "postalCode": {"type": ["string", "null"]},
-                "addressCountry": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"}
+        "productGroup": {
+          "type": "string",
+          "enum": ["textiles", "batteries", "electrical_appliances"]
+        },
+        "sectorProfile": {
+          "$ref": "#/$defs/sectorProfile"
+        },
+        "regulatedCore": {
+          "$ref": "#/$defs/regulatedCore"
+        },
+        "sectoralTextile": {
+          "$ref": "#/$defs/sectoralTextile"
+        },
+        "sectoralBattery": {
+          "$ref": "#/$defs/sectoralBattery"
+        },
+        "sectoralElectricalAppliance": {
+          "$ref": "#/$defs/sectoralElectricalAppliance"
+        },
+        "voluntaryEsg": {
+          "$ref": "#/$defs/voluntaryEsg"
+        },
+        "systemMetadata": {
+          "$ref": "#/$defs/systemMetadata"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "productGroup": { "const": "textiles" }
+            },
+            "required": ["productGroup"]
+          },
+          "then": {
+            "required": ["sectoralTextile"],
+            "properties": {
+              "regulatedCore": {
+                "properties": {
+                  "productIdentity": {
+                    "properties": {
+                      "esprCategory": { "const": "textiles" }
+                    }
+                  }
+                }
+              },
+              "sectorProfile": {
+                "properties": {
+                  "name": { "const": "textile_core_v1" }
+                }
               }
             },
-            "country": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"}
-          }
-        },
-        "materialComposition": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["material", "percentage"],
-            "properties": {
-              "material": {"type": "string"},
-              "percentage": {"type": "number", "minimum": 0, "maximum": 100},
-              "origin": {"type": ["string", "null"]},
-              "reachSvhc": {"type": ["boolean", "null"]}
+            "not": {
+              "anyOf": [
+                { "required": ["sectoralBattery"] },
+                { "required": ["sectoralElectricalAppliance"] }
+              ]
             }
           }
         },
-        "countryOfManufacture": {"type": ["string", "null"], "pattern": "^[A-Z]{2}$"},
-        "carbonFootprint": {
-          "type": ["object", "null"],
-          "properties": {
-            "gwp_kg_co2e": {"type": ["number", "null"]},
-            "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-            "methodology": {"type": ["string", "null"]}
+        {
+          "if": {
+            "properties": {
+              "productGroup": { "const": "batteries" }
+            },
+            "required": ["productGroup"]
+          },
+          "then": {
+            "required": ["sectoralBattery"],
+            "properties": {
+              "regulatedCore": {
+                "properties": {
+                  "productIdentity": {
+                    "properties": {
+                      "esprCategory": { "const": "batteries" }
+                    }
+                  }
+                }
+              },
+              "sectorProfile": {
+                "properties": {
+                  "name": { "const": "battery_passport_annex_xiii_v1" }
+                }
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["sectoralTextile"] },
+                { "required": ["sectoralElectricalAppliance"] }
+              ]
+            }
           }
         },
-        "readinessScore": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
-        "dppIssuer": {"type": "string"},
-        "dppVersion": {"type": "string"},
-        "dppIssuedAt": {"type": "string", "format": "date-time"},
-        "dppValidUntil": {"type": "string", "format": "date-time"}
+        {
+          "if": {
+            "properties": {
+              "productGroup": { "const": "electrical_appliances" }
+            },
+            "required": ["productGroup"]
+          },
+          "then": {
+            "required": ["sectoralElectricalAppliance"],
+            "properties": {
+              "regulatedCore": {
+                "properties": {
+                  "productIdentity": {
+                    "properties": {
+                      "esprCategory": { "const": "electrical_appliances" }
+                    }
+                  }
+                }
+              },
+              "sectorProfile": {
+                "properties": {
+                  "name": { "const": "electrical_appliance_espr_ready_v1" }
+                }
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["sectoralTextile"] },
+                { "required": ["sectoralBattery"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "countryCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "uriOrNull": {
+      "oneOf": [{ "type": "string", "format": "uri" }, { "type": "null" }]
+    },
+    "emailOrNull": {
+      "oneOf": [{ "type": "string", "format": "email" }, { "type": "null" }]
+    },
+    "phoneOrNull": {
+      "oneOf": [
+        { "type": "string", "pattern": "^\\+?[0-9()\\-\\s]{6,30}$" },
+        { "type": "null" }
+      ]
+    },
+    "percentage0to100": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "confidence0to1": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["addressCountry"],
+      "properties": {
+        "streetAddress": { "$ref": "#/$defs/nullableString" },
+        "addressLocality": { "$ref": "#/$defs/nullableString" },
+        "postalCode": { "$ref": "#/$defs/nullableString" },
+        "addressCountry": {
+          "oneOf": [{ "$ref": "#/$defs/countryCode" }, { "type": "null" }]
+        }
+      }
+    },
+    "sectorProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "regulatorySource"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "textile_core_v1",
+            "battery_passport_annex_xiii_v1",
+            "electrical_appliance_espr_ready_v1"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "regulatorySource": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "REG_2024_1781_ESPR",
+              "REG_2023_1542_BATTERIES",
+              "REG_2017_1369_ENERGY_LABELLING",
+              "SECTORAL_ACT_PENDING"
+            ]
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      }
+    },
+    "regulatedCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passportIdentity",
+        "productIdentity",
+        "identifiers",
+        "dataCarrier",
+        "economicOperators",
+        "facilities",
+        "registry",
+        "compliance",
+        "accessControl",
+        "provenance",
+        "auditTrail"
+      ],
+      "properties": {
+        "passportIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "passportId",
+            "passportVersion",
+            "status",
+            "issuedAt",
+            "validFrom",
+            "passportApplicability"
+          ],
+          "properties": {
+            "passportId": { "$ref": "#/$defs/nonEmptyString" },
+            "passportVersion": { "$ref": "#/$defs/nonEmptyString" },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "issued",
+                "updated",
+                "suspended",
+                "withdrawn",
+                "archived"
+              ]
+            },
+            "issuedAt": { "$ref": "#/$defs/dateTime" },
+            "validFrom": { "$ref": "#/$defs/dateTime" },
+            "validUntil": {
+              "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+            },
+            "passportApplicability": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["isMandatoryUnderUnionLaw"],
+              "properties": {
+                "isMandatoryUnderUnionLaw": { "type": "boolean" },
+                "mandatoryUnder": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["ESPR_2024_1781", "BATTERY_REG_2023_1542", "OTHER"]
+                  },
+                  "uniqueItems": true
+                },
+                "applicabilityNotes": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        },
+        "productIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "productId",
+            "productName",
+            "esprCategory",
+            "cnCode",
+            "granularityLevel",
+            "legalBasis"
+          ],
+          "properties": {
+            "productId": { "$ref": "#/$defs/nonEmptyString" },
+            "productName": { "$ref": "#/$defs/nonEmptyString" },
+            "productDescription": { "$ref": "#/$defs/nullableString" },
+            "brandName": { "$ref": "#/$defs/nullableString" },
+            "modelName": { "$ref": "#/$defs/nullableString" },
+            "modelNumber": { "$ref": "#/$defs/nullableString" },
+            "batchLot": { "$ref": "#/$defs/nullableString" },
+            "serialNumber": { "$ref": "#/$defs/nullableString" },
+            "productImageUrl": { "$ref": "#/$defs/uriOrNull" },
+            "esprCategory": {
+              "type": "string",
+              "enum": ["textiles", "batteries", "electrical_appliances"]
+            },
+            "cnCode": {
+              "type": "string",
+              "pattern": "^[0-9]{4}(\\.[0-9]{2,4})?$"
+            },
+            "granularityLevel": {
+              "type": "string",
+              "enum": ["item", "batch", "model"]
+            },
+            "eprelModelIdentifier": { "$ref": "#/$defs/nullableString" },
+            "legalBasis": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ESPR_2024_1781",
+                  "BATTERY_REG_2023_1542",
+                  "ENERGY_LABELLING_2017_1369",
+                  "SECTOR_SPECIFIC_ECODESIGN",
+                  "OTHER"
+                ]
+              },
+              "uniqueItems": true,
+              "minItems": 1
+            }
+          }
+        },
+        "identifiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "persistentUniqueProductIdentifier",
+            "uniqueOperatorIdentifier",
+            "uniqueFacilityIdentifier"
+          ],
+          "properties": {
+            "persistentUniqueProductIdentifier": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "scheme", "checkDigitVerified"],
+              "properties": {
+                "value": { "$ref": "#/$defs/nonEmptyString" },
+                "scheme": {
+                  "type": "string",
+                  "enum": ["GTIN", "EAN", "UPC", "UUID", "DID", "OTHER"]
+                },
+                "format": { "$ref": "#/$defs/nullableString" },
+                "issuingBody": { "$ref": "#/$defs/nullableString" },
+                "checkDigitVerified": { "type": "boolean" }
+              }
+            },
+            "uniqueOperatorIdentifier": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "scheme"],
+              "properties": {
+                "value": { "$ref": "#/$defs/nonEmptyString" },
+                "scheme": {
+                  "type": "string",
+                  "enum": ["EORI", "VAT", "LEI", "GLN", "NATIONAL", "OTHER"]
+                },
+                "issuingBody": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "uniqueFacilityIdentifier": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "scheme"],
+              "properties": {
+                "value": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/nonEmptyString" },
+                    { "type": "null" }
+                  ]
+                },
+                "scheme": {
+                  "type": ["string", "null"],
+                  "enum": ["GLN", "NATIONAL", "OTHER", null]
+                },
+                "issuingBody": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        },
+        "dataCarrier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "carrierValue",
+            "resolverUrl",
+            "physicalPlacement",
+            "isPersistent"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["QR", "DATAMATRIX", "RFID", "NFC", "OTHER"]
+            },
+            "carrierValue": { "$ref": "#/$defs/nonEmptyString" },
+            "resolverUrl": { "type": "string", "format": "uri" },
+            "physicalPlacement": {
+              "type": "string",
+              "enum": [
+                "on_product",
+                "on_packaging",
+                "on_documentation",
+                "digital_only"
+              ]
+            },
+            "standard": { "$ref": "#/$defs/nullableString" },
+            "isPersistent": { "type": "boolean" }
+          }
+        },
+        "economicOperators": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["responsibleEconomicOperator"],
+          "properties": {
+            "responsibleEconomicOperator": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "name",
+                "identifierRef",
+                "address",
+                "country"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "manufacturer",
+                    "authorised_representative",
+                    "importer",
+                    "distributor",
+                    "dealer",
+                    "other"
+                  ]
+                },
+                "name": { "$ref": "#/$defs/nonEmptyString" },
+                "identifierRef": { "$ref": "#/$defs/nonEmptyString" },
+                "registrationNumber": { "$ref": "#/$defs/nullableString" },
+                "vatNumber": { "$ref": "#/$defs/nullableString" },
+                "address": { "$ref": "#/$defs/address" },
+                "country": { "$ref": "#/$defs/countryCode" },
+                "contactEmail": { "$ref": "#/$defs/emailOrNull" },
+                "contactPhone": { "$ref": "#/$defs/phoneOrNull" },
+                "website": { "$ref": "#/$defs/uriOrNull" }
+              }
+            }
+          }
+        },
+        "facilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mainManufacturingFacility"],
+          "properties": {
+            "mainManufacturingFacility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["identifierRef"],
+              "properties": {
+                "name": { "$ref": "#/$defs/nullableString" },
+                "identifierRef": { "$ref": "#/$defs/nonEmptyString" },
+                "address": { "$ref": "#/$defs/address" },
+                "country": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/countryCode" },
+                    { "type": "null" }
+                  ]
+                },
+                "facilityRole": {
+                  "type": ["string", "null"],
+                  "enum": [
+                    "manufacturing",
+                    "assembly",
+                    "finishing",
+                    "dyeing",
+                    "weaving",
+                    "cell_manufacturing",
+                    "pack_assembly",
+                    "other",
+                    null
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["registryStatus", "registryJurisdiction"],
+          "properties": {
+            "registryStatus": {
+              "type": "string",
+              "enum": [
+                "not_registered",
+                "pending",
+                "registered",
+                "updated",
+                "retired"
+              ]
+            },
+            "registryRegistrationIdentifier": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "registeredAt": {
+              "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+            },
+            "registryJurisdiction": {
+              "type": "string",
+              "enum": ["EU"]
+            },
+            "registryNotes": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "compliance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["declarationOfConformity", "technicalDocumentation"],
+          "properties": {
+            "declarationOfConformity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["required", "present"],
+              "properties": {
+                "required": { "type": "boolean" },
+                "present": { "type": "boolean" },
+                "documentUrl": { "$ref": "#/$defs/uriOrNull" },
+                "documentReference": { "$ref": "#/$defs/nullableString" }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": { "present": { "const": true } },
+                    "required": ["present"]
+                  },
+                  "then": {
+                    "anyOf": [
+                      { "required": ["documentUrl"] },
+                      { "required": ["documentReference"] }
+                    ]
+                  }
+                }
+              ]
+            },
+            "technicalDocumentation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["present", "storageLocation"],
+              "properties": {
+                "present": { "type": "boolean" },
+                "documentReference": { "$ref": "#/$defs/nullableString" },
+                "documentUrl": { "$ref": "#/$defs/uriOrNull" },
+                "storageLocation": {
+                  "type": "string",
+                  "enum": ["internal", "external", "authority_portal", "other"]
+                },
+                "lastUpdated": {
+                  "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                }
+              }
+            }
+          }
+        },
+        "accessControl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "publicSections",
+            "restrictedSections",
+            "confidentialBusinessInformation"
+          ],
+          "properties": {
+            "publicSections": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            },
+            "restrictedSections": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "marketSurveillanceAuthorities",
+                "customs",
+                "economicOperators"
+              ],
+              "properties": {
+                "marketSurveillanceAuthorities": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/nonEmptyString" },
+                  "uniqueItems": true
+                },
+                "customs": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/nonEmptyString" },
+                  "uniqueItems": true
+                },
+                "economicOperators": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/nonEmptyString" },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "confidentialBusinessInformation": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["issuer", "signedBy"],
+          "properties": {
+            "issuer": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name"],
+              "properties": {
+                "name": { "$ref": "#/$defs/nonEmptyString" },
+                "did": { "$ref": "#/$defs/nullableString" },
+                "credentialReference": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "signedBy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["actor"],
+              "properties": {
+                "actor": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/nonEmptyString" },
+                    { "type": "null" }
+                  ]
+                },
+                "signatureReference": { "$ref": "#/$defs/nullableString" },
+                "signatureType": {
+                  "type": ["string", "null"],
+                  "enum": [
+                    "eSeal",
+                    "qualified_signature",
+                    "vc_proof",
+                    "other",
+                    null
+                  ]
+                }
+              }
+            },
+            "lastVerifiedBy": { "$ref": "#/$defs/nullableString" },
+            "lastVerifiedAt": {
+              "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+            }
+          }
+        },
+        "auditTrail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["createdAt", "changeLog"],
+          "properties": {
+            "createdAt": { "$ref": "#/$defs/dateTime" },
+            "updatedAt": {
+              "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+            },
+            "changeLog": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["timestamp", "actor", "action", "section"],
+                "properties": {
+                  "timestamp": { "$ref": "#/$defs/dateTime" },
+                  "actor": { "$ref": "#/$defs/nonEmptyString" },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "update",
+                      "verify",
+                      "suspend",
+                      "withdraw"
+                    ]
+                  },
+                  "section": { "$ref": "#/$defs/nonEmptyString" },
+                  "reason": { "$ref": "#/$defs/nullableString" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "textileTestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "testMethod": { "$ref": "#/$defs/nullableString" },
+        "result": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "sectoralTextile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "composition",
+        "substances",
+        "manufacturing",
+        "performanceAndDurability",
+        "repairAndMaintenance",
+        "careAndUse",
+        "endOfLife",
+        "certificationAndClaims"
+      ],
+      "properties": {
+        "composition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["materialComposition", "totalPercentageCheck"],
+          "properties": {
+            "materialComposition": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["component", "material", "percentage", "bioBased"],
+                "properties": {
+                  "component": {
+                    "type": "string",
+                    "enum": [
+                      "body",
+                      "handle",
+                      "lining",
+                      "thread",
+                      "label",
+                      "print",
+                      "other"
+                    ]
+                  },
+                  "material": { "$ref": "#/$defs/nonEmptyString" },
+                  "percentage": { "$ref": "#/$defs/percentage0to100" },
+                  "recycledContentPercentage": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/percentage0to100" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "recycledContentType": {
+                    "type": ["string", "null"],
+                    "enum": ["post_consumer", "pre_consumer", "unknown", null]
+                  },
+                  "bioBased": { "type": "boolean" },
+                  "materialOriginCountry": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/countryCode" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "certifications": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/nonEmptyString" },
+                    "uniqueItems": true
+                  }
+                }
+              }
+            },
+            "totalPercentageCheck": {
+              "type": "number",
+              "const": 100
+            }
+          }
+        },
+        "substances": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "substancesOfConcernPresent",
+            "reachSvhcPresent",
+            "svhcList"
+          ],
+          "properties": {
+            "substancesOfConcernPresent": { "type": "boolean" },
+            "reachSvhcPresent": { "type": "boolean" },
+            "svhcCheckDate": {
+              "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+            },
+            "svhcList": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["substanceName", "legalBasis"],
+                "properties": {
+                  "substanceName": { "$ref": "#/$defs/nonEmptyString" },
+                  "casNumber": { "$ref": "#/$defs/nullableString" },
+                  "concentrationRange": { "$ref": "#/$defs/nullableString" },
+                  "component": { "$ref": "#/$defs/nullableString" },
+                  "legalBasis": {
+                    "type": "string",
+                    "enum": ["REACH_SVHC", "REACH_ANNEX_XVII", "OTHER"]
+                  }
+                }
+              }
+            },
+            "restrictedSubstancesNotes": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "manufacturing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "countryOfManufacture",
+            "countryOfOrigin",
+            "yearOfManufacture",
+            "manufacturingSteps"
+          ],
+          "properties": {
+            "countryOfManufacture": {
+              "oneOf": [{ "$ref": "#/$defs/countryCode" }, { "type": "null" }]
+            },
+            "countryOfOrigin": {
+              "oneOf": [{ "$ref": "#/$defs/countryCode" }, { "type": "null" }]
+            },
+            "yearOfManufacture": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100
+            },
+            "manufacturingSteps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["step"],
+                "properties": {
+                  "step": {
+                    "type": "string",
+                    "enum": [
+                      "spinning",
+                      "weaving",
+                      "knitting",
+                      "dyeing",
+                      "printing",
+                      "cutting",
+                      "sewing",
+                      "finishing",
+                      "packing",
+                      "other"
+                    ]
+                  },
+                  "country": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/countryCode" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "facilityRef": { "$ref": "#/$defs/nullableString" }
+                }
+              }
+            }
+          }
+        },
+        "performanceAndDurability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["durabilityYears", "durabilityBasis"],
+          "properties": {
+            "durabilityYears": {
+              "type": "number",
+              "minimum": 0
+            },
+            "durabilityBasis": {
+              "type": "string",
+              "enum": ["measured", "estimated"]
+            },
+            "durabilityTestMethod": { "$ref": "#/$defs/nullableString" },
+            "washResistance": { "$ref": "#/$defs/textileTestResult" },
+            "abrasionResistance": { "$ref": "#/$defs/textileTestResult" },
+            "colourFastness": { "$ref": "#/$defs/textileTestResult" },
+            "pillingResistance": { "$ref": "#/$defs/textileTestResult" }
+          }
+        },
+        "repairAndMaintenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repairabilityApplicable", "repairServiceAvailable"],
+          "properties": {
+            "repairabilityApplicable": { "type": "boolean" },
+            "repairabilityScore": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "repairabilityMethod": { "$ref": "#/$defs/nullableString" },
+            "repairInstructionsUrl": { "$ref": "#/$defs/uriOrNull" },
+            "repairServiceAvailable": { "type": "boolean" },
+            "repairContact": { "$ref": "#/$defs/emailOrNull" },
+            "sparePartsAvailabilityYears": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "sparePartsNotes": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "careAndUse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["careSymbols"],
+          "properties": {
+            "userManualUrl": { "$ref": "#/$defs/uriOrNull" },
+            "careInstructionsText": { "$ref": "#/$defs/nullableString" },
+            "careSymbolsStandard": {
+              "type": ["string", "null"],
+              "enum": ["ISO_3758", null]
+            },
+            "careSymbols": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            },
+            "warnings": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "endOfLife": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reusable",
+            "recyclable",
+            "industrialCompostable",
+            "homeCompostable",
+            "takeBackAvailable",
+            "disassemblyRequired"
+          ],
+          "properties": {
+            "reusable": { "type": "boolean" },
+            "recyclable": { "type": "boolean" },
+            "recyclingInstructions": { "$ref": "#/$defs/nullableString" },
+            "industrialCompostable": { "type": "boolean" },
+            "homeCompostable": { "type": "boolean" },
+            "compostingInstructions": { "$ref": "#/$defs/nullableString" },
+            "takeBackAvailable": { "type": "boolean" },
+            "takeBackSchemeReference": { "$ref": "#/$defs/nullableString" },
+            "disassemblyRequired": { "type": "boolean" },
+            "disassemblyInstructions": { "$ref": "#/$defs/nullableString" },
+            "sortingInformation": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "certificationAndClaims": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["certifications"],
+          "properties": {
+            "certifications": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "status"],
+                "properties": {
+                  "name": { "$ref": "#/$defs/nonEmptyString" },
+                  "version": { "$ref": "#/$defs/nullableString" },
+                  "issuer": { "$ref": "#/$defs/nullableString" },
+                  "certificateNumber": { "$ref": "#/$defs/nullableString" },
+                  "validFrom": {
+                    "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                  },
+                  "validUntil": {
+                    "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                  },
+                  "documentUrl": { "$ref": "#/$defs/uriOrNull" },
+                  "scope": { "$ref": "#/$defs/nullableString" },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "valid",
+                      "expired",
+                      "pending",
+                      "not_obtained",
+                      "unknown"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sectoralBattery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batteryClassification",
+        "batteryIdentity",
+        "technicalCharacteristics",
+        "performanceAndDurability",
+        "sustainabilityAndComposition",
+        "conformityAndInformation",
+        "endOfLifeAndCircularity"
+      ],
+      "properties": {
+        "batteryClassification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "batteryCategory",
+            "chemistry",
+            "isRechargeable",
+            "passportRequired"
+          ],
+          "properties": {
+            "batteryCategory": {
+              "type": "string",
+              "enum": [
+                "portable",
+                "lmt",
+                "sli",
+                "industrial",
+                "electric_vehicle"
+              ]
+            },
+            "chemistry": {
+              "type": "string",
+              "enum": [
+                "lithium_ion",
+                "lithium_metal",
+                "lead_acid",
+                "nickel_metal_hydride",
+                "nickel_cadmium",
+                "sodium_ion",
+                "other"
+              ]
+            },
+            "isRechargeable": { "type": "boolean" },
+            "passportRequired": { "type": "boolean" },
+            "passportRequirementBasis": {
+              "type": ["string", "null"],
+              "enum": ["ARTICLE_77_BATTERY_REGULATION", null]
+            }
+          }
+        },
+        "batteryIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "batteryModelIdentifier",
+            "manufacturerBatteryIdentifier",
+            "manufacturingDate"
+          ],
+          "properties": {
+            "batteryModelIdentifier": { "$ref": "#/$defs/nonEmptyString" },
+            "manufacturerBatteryIdentifier": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "serialNumber": { "$ref": "#/$defs/nullableString" },
+            "manufacturingDate": {
+              "oneOf": [
+                { "$ref": "#/$defs/date" },
+                { "$ref": "#/$defs/dateTime" }
+              ]
+            },
+            "manufacturingPlace": { "$ref": "#/$defs/nullableString" },
+            "batteryMassKg": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "capacityKWh": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "ratedCapacityAh": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "nominalVoltageV": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            }
+          }
+        },
+        "technicalCharacteristics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "roundTripEnergyEfficiency",
+            "expectedLifetime",
+            "operatingConditions"
+          ],
+          "properties": {
+            "roundTripEnergyEfficiency": {
+              "oneOf": [
+                { "$ref": "#/$defs/percentage0to100" },
+                { "type": "null" }
+              ]
+            },
+            "expectedLifetime": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cycleLife": {
+                  "oneOf": [
+                    { "type": "integer", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                },
+                "calendarLifeYears": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                }
+              }
+            },
+            "operatingConditions": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "minimumOperatingTemperatureC": {
+                  "oneOf": [{ "type": "number" }, { "type": "null" }]
+                },
+                "maximumOperatingTemperatureC": {
+                  "oneOf": [{ "type": "number" }, { "type": "null" }]
+                },
+                "storageConditions": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        },
+        "performanceAndDurability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stateOfHealth",
+            "batteryManagementSystem",
+            "durabilityMetrics"
+          ],
+          "properties": {
+            "stateOfHealth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "present": { "type": "boolean" },
+                "valuePercent": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/percentage0to100" },
+                    { "type": "null" }
+                  ]
+                },
+                "measurementMethod": { "$ref": "#/$defs/nullableString" },
+                "measurementDate": {
+                  "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                }
+              }
+            },
+            "batteryManagementSystem": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "present": { "type": "boolean" },
+                "softwareVersion": { "$ref": "#/$defs/nullableString" },
+                "firmwareVersion": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "durabilityMetrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "remainingCapacityPercent": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/percentage0to100" },
+                    { "type": "null" }
+                  ]
+                },
+                "remainingPowerPercent": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/percentage0to100" },
+                    { "type": "null" }
+                  ]
+                },
+                "testMethod": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        },
+        "sustainabilityAndComposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "carbonFootprint",
+            "criticalRawMaterials",
+            "hazardousSubstances",
+            "recycledContent"
+          ],
+          "properties": {
+            "carbonFootprint": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "declared": { "type": "boolean" },
+                "gwpKgCo2ePerKWh": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                },
+                "performanceClass": { "$ref": "#/$defs/nullableString" },
+                "methodologyReference": { "$ref": "#/$defs/nullableString" },
+                "verificationReference": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "criticalRawMaterials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["material"],
+                "properties": {
+                  "material": {
+                    "type": "string",
+                    "enum": [
+                      "cobalt",
+                      "lead",
+                      "lithium",
+                      "nickel",
+                      "natural_graphite",
+                      "other"
+                    ]
+                  },
+                  "sharePercent": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/percentage0to100" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "massGrams": {
+                    "oneOf": [
+                      { "type": "number", "minimum": 0 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "sourceCountry": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/countryCode" },
+                      { "type": "null" }
+                    ]
+                  }
+                }
+              }
+            },
+            "hazardousSubstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "containsHazardousSubstances": { "type": "boolean" },
+                "notes": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "recycledContent": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["material", "percentage"],
+                "properties": {
+                  "material": {
+                    "type": "string",
+                    "enum": ["cobalt", "lead", "lithium", "nickel", "other"]
+                  },
+                  "percentage": { "$ref": "#/$defs/percentage0to100" },
+                  "verificationReference": { "$ref": "#/$defs/nullableString" }
+                }
+              }
+            }
+          }
+        },
+        "conformityAndInformation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ceMarkingPresent",
+            "declarationOfConformityReference",
+            "labelInformation"
+          ],
+          "properties": {
+            "ceMarkingPresent": { "type": "boolean" },
+            "declarationOfConformityReference": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "labelInformation": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "separateCollectionSymbolPresent": { "type": "boolean" },
+                "batteryCategoryLabelPresent": { "type": "boolean" },
+                "capacityLabelPresent": { "type": "boolean" },
+                "qrOrEquivalentPresent": { "type": "boolean" }
+              }
+            },
+            "safetyInstructionsUrl": { "$ref": "#/$defs/uriOrNull" },
+            "technicalDocumentationReference": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "endOfLifeAndCircularity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "removabilityAndReplaceability",
+            "collectionAndTakeBack",
+            "secondLifeStatus"
+          ],
+          "properties": {
+            "removabilityAndReplaceability": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "applicable": { "type": "boolean" },
+                "removableByEndUser": { "type": ["boolean", "null"] },
+                "replaceableByIndependentProfessional": {
+                  "type": ["boolean", "null"]
+                },
+                "instructionsUrl": { "$ref": "#/$defs/uriOrNull" }
+              }
+            },
+            "collectionAndTakeBack": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "takeBackAvailable": { "type": "boolean" },
+                "collectionSchemeReference": {
+                  "$ref": "#/$defs/nullableString"
+                }
+              }
+            },
+            "secondLifeStatus": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "isRepurposed": { "type": "boolean" },
+                "isRemanufactured": { "type": "boolean" },
+                "previousUseReference": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "batteryClassification": {
+                "properties": {
+                  "batteryCategory": {
+                    "enum": ["industrial", "electric_vehicle"]
+                  }
+                },
+                "required": ["batteryCategory"]
+              },
+              "batteryIdentity": {
+                "properties": {
+                  "capacityKWh": { "type": "number", "exclusiveMinimum": 2 }
+                },
+                "required": ["capacityKWh"]
+              }
+            },
+            "required": ["batteryClassification", "batteryIdentity"]
+          },
+          "then": {
+            "properties": {
+              "batteryClassification": {
+                "properties": {
+                  "passportRequired": { "const": true },
+                  "passportRequirementBasis": {
+                    "const": "ARTICLE_77_BATTERY_REGULATION"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sectoralElectricalAppliance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applianceClassification",
+        "energyAndPerformance",
+        "repairAndService",
+        "materialsAndSubstances",
+        "documentationAndSoftware",
+        "endOfLife"
+      ],
+      "properties": {
+        "applianceClassification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applianceType", "energyRelatedProduct"],
+          "properties": {
+            "applianceType": {
+              "type": "string",
+              "enum": [
+                "washing_machine",
+                "washer_dryer",
+                "dishwasher",
+                "refrigerator",
+                "freezer",
+                "television",
+                "display",
+                "vacuum_cleaner",
+                "oven",
+                "range_hood",
+                "air_conditioner",
+                "heat_pump",
+                "water_heater",
+                "lighting",
+                "small_household_appliance",
+                "other"
+              ]
+            },
+            "energyRelatedProduct": { "type": "boolean" },
+            "energyLabelRequired": { "type": ["boolean", "null"] },
+            "eprelRegistered": { "type": ["boolean", "null"] }
+          }
+        },
+        "energyAndPerformance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["energyEfficiency"],
+          "properties": {
+            "energyEfficiency": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "energyClass": { "$ref": "#/$defs/nullableString" },
+                "energyConsumptionKWhPerYear": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                },
+                "energyConsumptionPerCycleKWh": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                },
+                "ecoProgrammeAvailable": { "type": ["boolean", "null"] },
+                "testStandard": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "waterConsumptionLitresPerCycle": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "noiseEmissionDb": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "performanceClaims": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "repairAndService": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repairabilityApplicable",
+            "serviceInformationAvailable",
+            "spareParts"
+          ],
+          "properties": {
+            "repairabilityApplicable": { "type": "boolean" },
+            "repairabilityScore": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            },
+            "disassemblyMethod": { "$ref": "#/$defs/nullableString" },
+            "serviceInformationAvailable": { "type": "boolean" },
+            "repairInstructionsUrl": { "$ref": "#/$defs/uriOrNull" },
+            "spareParts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "available": { "type": "boolean" },
+                "availabilityYears": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0 },
+                    { "type": "null" }
+                  ]
+                },
+                "orderReferenceUrl": { "$ref": "#/$defs/uriOrNull" },
+                "professionalOnlyParts": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/nonEmptyString" },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "softwareSupportYears": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+            }
+          }
+        },
+        "materialsAndSubstances": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["materialCompositionSummary", "substancesOfConcern"],
+          "properties": {
+            "materialCompositionSummary": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["material"],
+                "properties": {
+                  "material": { "$ref": "#/$defs/nonEmptyString" },
+                  "sharePercent": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/percentage0to100" },
+                      { "type": "null" }
+                    ]
+                  }
+                }
+              }
+            },
+            "substancesOfConcern": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "present": { "type": "boolean" },
+                "notes": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "containsBattery": { "type": "boolean" },
+            "embeddedBatteryRemovability": {
+              "type": ["string", "null"],
+              "enum": [
+                "user_removable",
+                "professional_removable",
+                "not_removable",
+                null
+              ]
+            }
+          }
+        },
+        "documentationAndSoftware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["userManualUrl", "technicalDocumentationReference"],
+          "properties": {
+            "userManualUrl": { "$ref": "#/$defs/uriOrNull" },
+            "installationManualUrl": { "$ref": "#/$defs/uriOrNull" },
+            "technicalDocumentationReference": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "firmwareVersion": { "$ref": "#/$defs/nullableString" },
+            "softwareUpdatePolicy": { "$ref": "#/$defs/nullableString" },
+            "cybersecuritySupportStatement": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "endOfLife": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recyclable", "wasteCollectionInformationAvailable"],
+          "properties": {
+            "recyclable": { "type": "boolean" },
+            "recyclingInstructions": { "$ref": "#/$defs/nullableString" },
+            "wasteCollectionInformationAvailable": { "type": "boolean" },
+            "takeBackAvailable": { "type": "boolean" },
+            "criticalComponentsForDepollution": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "voluntaryEsg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "footprint",
+        "recycledContent",
+        "packaging",
+        "supplyChainTransparency"
+      ],
+      "properties": {
+        "footprint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["carbonFootprint", "waterConsumption"],
+          "properties": {
+            "carbonFootprint": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["gwpKgCo2e", "scope"],
+              "properties": {
+                "gwpKgCo2e": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "cradle_to_gate",
+                    "cradle_to_grave",
+                    "gate_to_gate",
+                    "other"
+                  ]
+                },
+                "methodology": { "$ref": "#/$defs/nullableString" },
+                "dataSource": { "$ref": "#/$defs/nullableString" },
+                "confidence": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/confidence0to1" },
+                    { "type": "null" }
+                  ]
+                },
+                "verifiedBy": { "$ref": "#/$defs/nullableString" },
+                "verificationDate": {
+                  "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                },
+                "notes": { "$ref": "#/$defs/nullableString" }
+              }
+            },
+            "waterConsumption": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["litersPerUnit", "scope"],
+              "properties": {
+                "litersPerUnit": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": ["production", "full_lifecycle", "other"]
+                },
+                "methodology": { "$ref": "#/$defs/nullableString" },
+                "dataSource": { "$ref": "#/$defs/nullableString" },
+                "notes": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          }
+        },
+        "recycledContent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["overallPercentage", "byMaterial"],
+          "properties": {
+            "overallPercentage": { "$ref": "#/$defs/percentage0to100" },
+            "byMaterial": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["material", "percentage", "sourceType"],
+                "properties": {
+                  "material": { "$ref": "#/$defs/nonEmptyString" },
+                  "percentage": { "$ref": "#/$defs/percentage0to100" },
+                  "sourceType": {
+                    "type": "string",
+                    "enum": ["post_consumer", "pre_consumer", "unknown"]
+                  }
+                }
+              }
+            },
+            "notes": { "$ref": "#/$defs/nullableString" }
+          }
+        },
+        "packaging": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recyclable", "plasticFreePackaging"],
+          "properties": {
+            "type": { "$ref": "#/$defs/nullableString" },
+            "material": { "$ref": "#/$defs/nullableString" },
+            "recyclable": { "type": "boolean" },
+            "recycledContentPercentage": {
+              "oneOf": [
+                { "$ref": "#/$defs/percentage0to100" },
+                { "type": "null" }
+              ]
+            },
+            "plasticFreePackaging": { "type": "boolean" }
+          }
+        },
+        "supplyChainTransparency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transparencyLevel", "suppliers"],
+          "properties": {
+            "transparencyLevel": {
+              "type": "string",
+              "enum": ["tier1", "tier2", "tier3", "farm", "unknown"]
+            },
+            "suppliers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["tier"],
+                "properties": {
+                  "tier": {
+                    "type": "string",
+                    "enum": ["tier1", "tier2", "tier3", "other"]
+                  },
+                  "name": { "$ref": "#/$defs/nullableString" },
+                  "country": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/countryCode" },
+                      { "type": "null" }
+                    ]
+                  },
+                  "role": { "$ref": "#/$defs/nullableString" },
+                  "auditDate": {
+                    "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "systemMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "qualityAssessment", "technicalAssets"],
+      "properties": {
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generatorName",
+            "generatorVersion",
+            "generationMethod",
+            "humanReviewStatus"
+          ],
+          "properties": {
+            "generatorName": { "$ref": "#/$defs/nonEmptyString" },
+            "generatorVersion": { "$ref": "#/$defs/nonEmptyString" },
+            "generationMethod": {
+              "type": "string",
+              "enum": ["manual", "imported", "ai_assisted", "hybrid"]
+            },
+            "humanReviewStatus": {
+              "type": "string",
+              "enum": ["not_reviewed", "reviewed", "approved", "rejected"]
+            }
+          }
+        },
+        "qualityAssessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "readinessScore",
+            "readinessScoreBreakdown",
+            "missingFields"
+          ],
+          "properties": {
+            "readinessScore": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "readinessScoreBreakdown": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "essentialFields",
+                "recommendedFields",
+                "documentsAttached",
+                "photoStandardized",
+                "total",
+                "max"
+              ],
+              "properties": {
+                "essentialFields": { "type": "number", "minimum": 0 },
+                "recommendedFields": { "type": "number", "minimum": 0 },
+                "documentsAttached": { "type": "number", "minimum": 0 },
+                "photoStandardized": { "type": "number", "minimum": 0 },
+                "total": { "type": "number", "minimum": 0 },
+                "max": { "type": "number", "minimum": 0 }
+              }
+            },
+            "missingFields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["field", "severity"],
+                "properties": {
+                  "field": { "$ref": "#/$defs/nonEmptyString" },
+                  "severity": {
+                    "type": "string",
+                    "enum": ["critical", "required", "recommended", "optional"]
+                  },
+                  "action": { "$ref": "#/$defs/nullableString" },
+                  "regulatoryBasis": { "$ref": "#/$defs/nullableString" },
+                  "deadline": {
+                    "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "technicalAssets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attachments"],
+          "properties": {
+            "contentHash": { "$ref": "#/$defs/nullableString" },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "type"],
+                "properties": {
+                  "name": { "$ref": "#/$defs/nonEmptyString" },
+                  "type": { "$ref": "#/$defs/nonEmptyString" },
+                  "url": { "$ref": "#/$defs/uriOrNull" },
+                  "hash": { "$ref": "#/$defs/nullableString" }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

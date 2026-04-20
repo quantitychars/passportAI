@@ -53,6 +53,14 @@
     "cnCode": "6305.33",
     "granularityLevel": "model",
 
+    "uniqueProductIdentifier": {
+      "scheme": "GS1",
+      "value": "05901234123457",
+      "format": "GTIN-14",
+      "gs1CompanyPrefix": "5901234",
+      "checkDigitVerified": true
+    },
+
     "economicOperator": {
       "name": "Brand LLC",
       "vatNumber": "UA39482710",
