@@ -301,9 +301,16 @@ class TestAgent(BaseAgent):
 
 a = TestAgent(None)
 # Test 1: _parse_json_fallback
-result = a._parse_json_fallback('\`\`\`json\n{\"ok\": true}\n\`\`\`')
-assert result == {'ok': True}
-print('_parse_json_fallback OK')
+
+ok = a._format_success({'ok': True})
+assert ok['success'] is True
+assert ok['agent'] == 'TestAgent'
+
+err = a._format_error('boom')
+assert err['success'] is False
+assert err['agent'] == 'TestAgent'
+
+print('AgentResult contract OK')
 # Test 2: run_verified_task exists and is callable
 assert callable(getattr(a, 'run_verified_task', None))
 print('run_verified_task OK')
@@ -374,6 +381,62 @@ def generate_from_text(self, description: str) -> dict:
         tools=DPP_TOOL,
         system_prompt="You are an EU DPP expert. Generate ESPR-compliant Digital Product Passports."
     )
+```
+
+```
+# DPPGenerator — два слоя
+
+# Слой 1: Python владеет структурой (неизменно)
+BASE_TEMPLATE = {
+    "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://passportai.io/contexts/dpp/v1"
+    ],
+    "type": ["VerifiableCredential", "DigitalProductPassport"],
+    "issuer": "did:web:passportai.io",
+    "credentialSubject": {
+        "type": "ProductPassport",
+        "productIdentifier": None,   # ← GS1Specialist заполнит
+        "manufacturer": None,        # ← user_input
+        "materialComposition": [],   # ← VisionAgent + user_input
+        "countryOfManufacture": None,
+        "gwp_kg_co2e": None,         # ← LCASpecialist заполнит
+        "sustainabilityScore": None,
+        "repairabilityScore": None,
+        "endOfLifeInstructions": None,
+    }
+}
+
+# Слой 2: LLM возвращает ТОЛЬКО значения (филлы)
+FILL_TOOL = [{
+    "type": "function",
+    "function": {
+        "name": "fill_product_fields",
+        "description": "Extract product field values only. No JSON-LD structure.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "productName":          {"type": "string"},
+                "materialComposition":  {"type": "array", "items": {"type": "string"}},
+                "countryOfManufacture": {"type": "string"},
+                "description":          {"type": "string"},
+            },
+            "required": ["productName", "materialComposition"]
+        }
+    }
+}]
+
+# Слой 3: Python собирает финальный паспорт
+def build_passport(self, fills: dict) -> dict:
+    passport = copy.deepcopy(BASE_TEMPLATE)
+    passport["id"] = f"urn:uuid:{uuid4()}"
+    passport["issuanceDate"] = datetime.utcnow().isoformat() + "Z"
+    # Каждый агент вносит свои поля
+    cs = passport["credentialSubject"]
+    cs["productName"] = fills.get("productName")
+    cs["materialComposition"] = fills.get("materialComposition", [])
+    # ... и т.д.
+    return passport
 ```
 
 Тест:
@@ -517,7 +580,7 @@ class VisionAgent(BaseAgent):
         return self.run(image_path=image_path, description=description)
 ```
 
-Тест: запустить на фото шопера NikSense → `category == "textiles"`
+Тест: запустить на фото шопера Brand → `category == "textiles"`
 
 ---
 
@@ -784,13 +847,13 @@ print('cross_agent_consistency_check OK — conflicts flagged, pipeline not bloc
 Файл: `src/processing/qr.py`
 (без изменений vs v1 — QR генерируется только после Storage.get_public_url())
 
-**ИТОГ НЕДЕЛИ 3:** end-to-end тест: фото NikSense → полный `output/{uuid}/` со всеми 5 файлами
+**ИТОГ НЕДЕЛИ 3:** end-to-end тест: фото Brand → полный `output/{uuid}/` со всеми 5 файлами
 
 ---
 
 ## НЕДЕЛЯ 4: UI + Demo (4–10 мая)
 
-(без изменений vs v1 — FastAPI + Gradio + NikSense тест + видео)
+(без изменений vs v1 — FastAPI + Gradio + Brand тест + видео)
 
 ### Шаг 4.1 — FastAPI Passport Server
 
@@ -798,7 +861,7 @@ print('cross_agent_consistency_check OK — conflicts flagged, pipeline not bloc
 
 ### Шаг 4.3 — app.py финальный (gr.mount_gradio_app pattern)
 
-### Шаг 4.4 — Тест с NikSense ← КРИТИЧЕСКИЙ
+### Шаг 4.4 — Тест с Brand ← КРИТИЧЕСКИЙ
 
 ### Шаг 4.5 — Демо-видео (OBS Studio, 3 минуты)
 

@@ -13,8 +13,6 @@ Run:
     pytest tests/test_agents.py -v
 """
 
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # BaseAgent._parse_json_response() tests
