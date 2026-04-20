@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://passportai.example.com/schemas/universal_dpp_vc.json",
+  "title": "Universal Digital Product Passport Verifiable Credential Wrapper",
+  "description": "VC Data Model 2.0 wrapper for a Digital Product Passport payload stored in credentialSubject.dpp",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "@context",
+    "id",
+    "type",
+    "issuer",
+    "validFrom",
+    "credentialSubject"
+  ],
+  "properties": {
+    "@context": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "format": "uri"
+          },
+          {
+            "type": "object"
+          }
+        ]
+      },
+      "contains": {
+        "const": "https://www.w3.org/ns/credentials/v2"
+      }
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "VerifiableCredential"
+          }
+        },
+        {
+          "contains": {
+            "const": "DigitalProductPassportCredential"
+          }
+        }
+      ]
+    },
+    "issuer": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": ["string", "null"]
+            }
+          }
+        }
+      ]
+    },
+    "validFrom": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Must be after validFrom. Enforced at runtime, not by schema."
+    },
+    "credentialSubject": {
+      "$ref": "#/$defs/credentialSubject"
+    },
+    "proof": {
+      "$ref": "#/$defs/proof"
+    }
+  },
+
+  "$defs": {
+    "credentialSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "dpp"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dpp": {
+          "$ref": "https://passportai.example.com/schemas/universal_dpp.json"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "cryptosuite",
+        "created",
+        "verificationMethod",
+        "proofPurpose",
+        "proofValue"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cryptosuite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "verificationMethod": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proofPurpose": {
+          "type": "string",
+          "enum": [
+            "assertionMethod",
+            "authentication",
+            "keyAgreement",
+            "capabilityInvocation",
+            "capabilityDelegation"
+          ]
+        },
+        "proofValue": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
