@@ -1108,6 +1108,10 @@
             "batteryMassKg": {
               "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
             },
+            "activeMaterialMassKg": {
+              "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }],
+              "description": "Mass of active electrode materials only, excluding casing, BMS, cables. Used for CRM sharePercent calculations."
+            },
             "capacityKWh": {
               "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
             },
