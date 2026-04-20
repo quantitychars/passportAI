@@ -5,285 +5,478 @@
     "https://ref.gs1.org/standards/gs1-jld/contexts/gs1-vocab.jsonld",
     {
       "dpp": "https://passportai.example.com/vocab#",
-      "espr": "https://ec.europa.eu/espr/vocab#",
+      "DigitalProductPassportCredential": "dpp:DigitalProductPassportCredential",
       "DigitalProductPassport": "dpp:DigitalProductPassport",
-      "readinessScore": "dpp:readinessScore",
-      "esprCategory": "espr:category",
-      "cnCode": "espr:cnCode",
-      "granularityLevel": "espr:granularityLevel",
-      "gwp_kg_co2e": "espr:gwpKgCo2e",
-      "facilityId": "espr:facilityId",
-      "registryId": "espr:registryId",
-      "dppIssuer": "dpp:issuer",
-      "dppVersion": "dpp:version",
-      "dppIssuedAt": "dpp:issuedAt",
-      "dppValidUntil": "dpp:validUntil",
-      "contentHash": "dpp:contentHash",
-      "missingFields": "dpp:missingFields",
-      "substancesOfConcern": "espr:substancesOfConcern",
-      "repairabilityScore": "espr:repairabilityScore",
-      "durabilityYears": "espr:durabilityYears",
-      "endOfLifeInstructions": "espr:endOfLifeInstructions",
-      "disassemblyInstructions": "espr:disassemblyInstructions",
-      "sparePartsAvailabilityYears": "espr:sparePartsAvailabilityYears",
-      "recycledContent": "espr:recycledContent",
-      "waterConsumption": "espr:waterConsumption",
-      "carbonFootprint": "espr:carbonFootprint",
-      "materialComposition": "espr:materialComposition",
-      "declarationOfConformity": "espr:declarationOfConformity",
-      "technicalDocumentation": "espr:technicalDocumentation",
-      "unlocode": "https://locode.info/"
+      "BatteryPassport": "dpp:BatteryPassport"
     }
   ],
-  "id": "did:web:passportai.example.com:passports:3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b",
-  "type": ["VerifiableCredential", "DigitalProductPassport"],
+  "id": "did:web:passportai.example.com:passports:8a4d5d8f-3f6e-4c2e-9b69-3d6b7b0f2a11",
+  "type": [
+    "VerifiableCredential",
+    "DigitalProductPassportCredential",
+    "BatteryPassport"
+  ],
   "issuer": "did:web:passportai.example.com",
-  "validFrom": "2025-04-13T09:00:00Z",
-  "validUntil": "2035-04-13T09:00:00Z",
-  "contentHash": "sha256:a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4",
+  "validFrom": "2026-04-20T10:30:00Z",
+  "validUntil": "2036-04-20T10:30:00Z",
   "credentialSubject": {
-    "id": "did:web:passportai.example.com:passports:3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b:subject",
-
-    "productId": "did:web:passportai.example.com:products:brand-tote-natural-001",
-    "productName": "Brand Organic Tote Bag",
-    "productDescription": "Reusable tote bag made from 100% GOTS-certified organic cotton canvas. Screen-printed logo with water-based ink. Double-stitched handles for durability. Designed and manufactured in Kyiv, Ukraine.",
-    "modelNumber": "NS-TOTE-NAT-001",
-
-    "esprCategory": "textiles",
-    "cnCode": "6305.33",
-    "granularityLevel": "model",
-
-    "uniqueProductIdentifier": {
-      "scheme": "GS1",
-      "value": "05901234123457",
-      "format": "GTIN-14",
-      "gs1CompanyPrefix": "5901234",
-      "checkDigitVerified": true
-    },
-
-    "economicOperator": {
-      "name": "Brand LLC",
-      "vatNumber": "UA39482710",
-      "registrationNumber": "UA-39482710-2019",
-      "address": {
-        "streetAddress": "14 Khreshchatyk Street, Office 302",
-        "addressLocality": "Kyiv",
-        "postalCode": "01001",
-        "addressCountry": "UA"
+    "id": "did:web:passportai.example.com:products:industrial-battery-pack-48v-105ah-001",
+    "dpp": {
+      "schemaVersion": "1.0.0",
+      "passportId": "did:web:passportai.example.com:passports:8a4d5d8f-3f6e-4c2e-9b69-3d6b7b0f2a11",
+      "productGroup": "batteries",
+      "sectorProfile": {
+        "name": "battery_passport_annex_xiii_v1",
+        "version": "1.0.0",
+        "regulatorySource": ["REG_2023_1542_BATTERIES", "REG_2024_1781_ESPR"]
       },
-      "country": "UA",
-      "contactEmail": "compliance@brand.com.ua",
-      "contactPhone": "+380441234567",
-      "website": "https://brand.com.ua"
-    },
-
-    "facilityId": {
-      "name": "Brand Production Studio",
-      "address": {
-        "streetAddress": "7 Fabrychna Street",
-        "addressLocality": "Kyiv",
-        "postalCode": "03067",
-        "addressCountry": "UA"
+      "regulatedCore": {
+        "passportIdentity": {
+          "passportId": "did:web:passportai.example.com:passports:8a4d5d8f-3f6e-4c2e-9b69-3d6b7b0f2a11",
+          "passportVersion": "1.0.0",
+          "status": "issued",
+          "issuedAt": "2026-04-20T10:30:00Z",
+          "validFrom": "2026-04-20T10:30:00Z",
+          "validUntil": "2036-04-20T10:30:00Z",
+          "passportApplicability": {
+            "isMandatoryUnderUnionLaw": true,
+            "mandatoryUnder": ["BATTERY_REG_2023_1542"],
+            "applicabilityNotes": "Industrial rechargeable battery with capacity above 2 kWh."
+          }
+        },
+        "productIdentity": {
+          "productId": "did:web:passportai.example.com:products:industrial-battery-pack-48v-105ah-001",
+          "productName": "Lithium-Ion Industrial Battery Pack 48V 105Ah",
+          "productDescription": "Rechargeable lithium-ion industrial battery pack for warehouse vehicles and stationary industrial applications.",
+          "brandName": "Voltis",
+          "modelName": "VBP-48-105",
+          "modelNumber": "VBP-48-105-2026",
+          "batchLot": "LOT-2026-04-A",
+          "serialNumber": "SN-VBP48105-0008721",
+          "productImageUrl": "https://passportai.example.com/assets/vbp-48-105/front.png",
+          "esprCategory": "batteries",
+          "cnCode": "8507.60",
+          "granularityLevel": "item",
+          "eprelModelIdentifier": null,
+          "legalBasis": ["BATTERY_REG_2023_1542"]
+        },
+        "identifiers": {
+          "persistentUniqueProductIdentifier": {
+            "value": "09506000123455",
+            "scheme": "GTIN",
+            "format": "GTIN-14",
+            "issuingBody": "GS1",
+            "checkDigitVerified": true
+          },
+          "uniqueOperatorIdentifier": {
+            "value": "EU-EO-PL-7845123901",
+            "scheme": "VAT",
+            "issuingBody": "Polish Tax Authority"
+          },
+          "uniqueFacilityIdentifier": {
+            "value": "5901234000000",
+            "scheme": "GLN",
+            "issuingBody": "GS1 Poland"
+          }
+        },
+        "dataCarrier": {
+          "type": "QR",
+          "carrierValue": "https://passportai.example.com/dpp/did:web:passportai.example.com:passports:8a4d5d8f-3f6e-4c2e-9b69-3d6b7b0f2a11",
+          "resolverUrl": "https://passportai.example.com/dpp/did:web:passportai.example.com:passports:8a4d5d8f-3f6e-4c2e-9b69-3d6b7b0f2a11",
+          "physicalPlacement": "on_product",
+          "standard": "ISO/IEC 18004",
+          "isPersistent": true
+        },
+        "economicOperators": {
+          "responsibleEconomicOperator": {
+            "role": "manufacturer",
+            "name": "Voltis Energy Systems Sp. z o.o.",
+            "identifierRef": "EU-EO-PL-7845123901",
+            "registrationNumber": "KRS-0000987654",
+            "vatNumber": "PL7845123901",
+            "address": {
+              "streetAddress": "ul. Przemyslowa 18",
+              "addressLocality": "Wroclaw",
+              "postalCode": "52-200",
+              "addressCountry": "PL"
+            },
+            "country": "PL",
+            "contactEmail": "compliance@voltis-energy.eu",
+            "contactPhone": "+48711234567",
+            "website": "https://voltis-energy.eu"
+          }
+        },
+        "facilities": {
+          "mainManufacturingFacility": {
+            "name": "Voltis Battery Assembly Plant Wroclaw",
+            "identifierRef": "5901234000008",
+            "address": {
+              "streetAddress": "ul. Fabryczna 55",
+              "addressLocality": "Wroclaw",
+              "postalCode": "54-611",
+              "addressCountry": "PL"
+            },
+            "country": "PL",
+            "facilityRole": "pack_assembly"
+          }
+        },
+        "registry": {
+          "registryStatus": "pending",
+          "registryRegistrationIdentifier": null,
+          "registeredAt": null,
+          "registryJurisdiction": "EU",
+          "registryNotes": "Awaiting production registry onboarding."
+        },
+        "compliance": {
+          "declarationOfConformity": {
+            "required": true,
+            "present": true,
+            "documentUrl": "https://passportai.example.com/docs/vbp-48-105/doc-eu-2026-041.pdf",
+            "documentReference": "DoC-EU-VBP-48-105-2026-041"
+          },
+          "technicalDocumentation": {
+            "present": true,
+            "documentReference": "TECHFILE-VBP-48-105-2026",
+            "documentUrl": "https://passportai.example.com/docs/vbp-48-105/technical-file.pdf",
+            "storageLocation": "external",
+            "lastUpdated": "2026-04-19"
+          }
+        },
+        "accessControl": {
+          "publicSections": [
+            "regulatedCore.productIdentity",
+            "sectoralBattery.batteryClassification",
+            "sectoralBattery.batteryIdentity",
+            "sectoralBattery.conformityAndInformation",
+            "sectoralBattery.endOfLifeAndCircularity"
+          ],
+          "restrictedSections": {
+            "marketSurveillanceAuthorities": [
+              "regulatedCore.compliance",
+              "sectoralBattery.sustainabilityAndComposition",
+              "regulatedCore.auditTrail"
+            ],
+            "customs": [
+              "regulatedCore.productIdentity",
+              "regulatedCore.identifiers",
+              "regulatedCore.economicOperators",
+              "regulatedCore.registry"
+            ],
+            "economicOperators": [
+              "sectoralBattery.performanceAndDurability",
+              "regulatedCore.compliance"
+            ]
+          },
+          "confidentialBusinessInformation": [
+            "cell_supplier_contract_terms",
+            "detailed_bill_of_materials_costs",
+            "non_public_process_parameters"
+          ]
+        },
+        "provenance": {
+          "issuer": {
+            "name": "PassportAI Compliance Platform",
+            "did": "did:web:passportai.example.com",
+            "credentialReference": "VC-ISSUER-2026-00091"
+          },
+          "signedBy": {
+            "actor": "Marta Kowalska",
+            "signatureReference": "SIG-2026-04-20-VBP48105-001",
+            "signatureType": "qualified_signature"
+          },
+          "lastVerifiedBy": "Voltis Internal Compliance Office",
+          "lastVerifiedAt": "2026-04-20T10:25:00Z"
+        },
+        "auditTrail": {
+          "createdAt": "2026-04-20T09:50:00Z",
+          "updatedAt": "2026-04-20T10:30:00Z",
+          "changeLog": [
+            {
+              "timestamp": "2026-04-20T09:50:00Z",
+              "actor": "passport.pipeline",
+              "action": "create",
+              "section": "dpp",
+              "reason": "Initial passport creation from PLM and compliance data sources."
+            },
+            {
+              "timestamp": "2026-04-20T10:12:00Z",
+              "actor": "compliance.officer",
+              "action": "verify",
+              "section": "regulatedCore.compliance",
+              "reason": "Declaration of conformity and technical documentation checked."
+            },
+            {
+              "timestamp": "2026-04-20T10:30:00Z",
+              "actor": "compliance.officer",
+              "action": "update",
+              "section": "sectoralBattery.sustainabilityAndComposition",
+              "reason": "Carbon footprint and recycled content data finalized."
+            }
+          ]
+        }
       },
-      "unlocode": "UAKBP",
-      "gln": null,
-      "certifications": ["GOTS-Facility-UA-2024-0087"]
-    },
-
-    "registryId": "PENDING — EU DPP Registry not yet operational (expected 2026)",
-
-    "materialComposition": [
-      {
-        "material": "Organic Cotton",
-        "percentage": 98,
-        "origin": "UA",
-        "certifications": ["GOTS 6.0"],
-        "reachSvhc": false
+      "sectoralBattery": {
+        "batteryClassification": {
+          "batteryCategory": "industrial",
+          "chemistry": "lithium_ion",
+          "isRechargeable": true,
+          "passportRequired": true,
+          "passportRequirementBasis": "ARTICLE_77_BATTERY_REGULATION"
+        },
+        "batteryIdentity": {
+          "batteryModelIdentifier": "VBP-48-105",
+          "manufacturerBatteryIdentifier": "VOLTIS-BATT-IND-48V105AH-2026",
+          "serialNumber": "SN-VBP48105-0008721",
+          "manufacturingDate": "2026-04-15",
+          "manufacturingPlace": "Wroclaw, PL",
+          "batteryMassKg": 62.4,
+          "activeMaterialMassKg": 50.4,
+          "capacityKWh": 5.04,
+          "ratedCapacityAh": 105,
+          "nominalVoltageV": 48
+        },
+        "technicalCharacteristics": {
+          "roundTripEnergyEfficiency": 94.2,
+          "expectedLifetime": {
+            "cycleLife": 4000,
+            "calendarLifeYears": 12
+          },
+          "operatingConditions": {
+            "minimumOperatingTemperatureC": -10,
+            "maximumOperatingTemperatureC": 45,
+            "storageConditions": "Store at 15-25°C, 30-60% SOC, dry indoor environment."
+          }
+        },
+        "performanceAndDurability": {
+          "stateOfHealth": {
+            "present": true,
+            "valuePercent": 100,
+            "measurementMethod": "Factory end-of-line reference test",
+            "measurementDate": "2026-04-16"
+          },
+          "batteryManagementSystem": {
+            "present": true,
+            "softwareVersion": "BMS-3.2.1",
+            "firmwareVersion": "FW-3.2.1-build118"
+          },
+          "durabilityMetrics": {
+            "remainingCapacityPercent": 100,
+            "remainingPowerPercent": 100,
+            "testMethod": "IEC-based internal validation protocol VP-BAT-021"
+          }
+        },
+        "sustainabilityAndComposition": {
+          "carbonFootprint": {
+            "declared": true,
+            "gwpKgCo2ePerKWh": 68.5,
+            "performanceClass": "C",
+            "methodologyReference": "CF-BAT-Method-v1.2",
+            "verificationReference": "VER-CF-2026-118"
+          },
+          "criticalRawMaterials": [
+            {
+              "material": "lithium",
+              "sharePercent": 1.8,
+              "massGrams": 907.2,
+              "sourceCountry": "CL"
+            },
+            {
+              "material": "nickel",
+              "sharePercent": 8.4,
+              "massGrams": 4233.6,
+              "sourceCountry": "CA"
+            },
+            {
+              "material": "cobalt",
+              "sharePercent": 2.1,
+              "massGrams": 1058.4,
+              "sourceCountry": "FI"
+            },
+            {
+              "material": "natural_graphite",
+              "sharePercent": 11.6,
+              "massGrams": 5846.4,
+              "sourceCountry": "CN"
+            }
+          ],
+          "hazardousSubstances": {
+            "containsHazardousSubstances": true,
+            "notes": "Contains electrolyte and hazardous battery components requiring controlled handling and end-of-life treatment."
+          },
+          "recycledContent": [
+            {
+              "material": "cobalt",
+              "percentage": 18.5,
+              "verificationReference": "RC-CO-2026-042"
+            },
+            {
+              "material": "lithium",
+              "percentage": 7.2,
+              "verificationReference": "RC-LI-2026-031"
+            },
+            {
+              "material": "nickel",
+              "percentage": 14.1,
+              "verificationReference": "RC-NI-2026-055"
+            }
+          ]
+        },
+        "conformityAndInformation": {
+          "ceMarkingPresent": true,
+          "declarationOfConformityReference": "DoC-EU-VBP-48-105-2026-041",
+          "labelInformation": {
+            "separateCollectionSymbolPresent": true,
+            "batteryCategoryLabelPresent": true,
+            "capacityLabelPresent": true,
+            "qrOrEquivalentPresent": true
+          },
+          "safetyInstructionsUrl": "https://passportai.example.com/docs/vbp-48-105/safety-instructions.pdf",
+          "technicalDocumentationReference": "TECHFILE-VBP-48-105-2026"
+        },
+        "endOfLifeAndCircularity": {
+          "removabilityAndReplaceability": {
+            "applicable": true,
+            "removableByEndUser": false,
+            "replaceableByIndependentProfessional": true,
+            "instructionsUrl": "https://passportai.example.com/docs/vbp-48-105/removal-replacement.pdf"
+          },
+          "collectionAndTakeBack": {
+            "takeBackAvailable": true,
+            "collectionSchemeReference": "EU-IND-BATT-TAKEBACK-PL-01"
+          },
+          "secondLifeStatus": {
+            "isRepurposed": false,
+            "isRemanufactured": false,
+            "previousUseReference": null
+          }
+        }
       },
-      {
-        "material": "Polyester Thread (stitching)",
-        "percentage": 2,
-        "origin": "PL",
-        "certifications": [],
-        "reachSvhc": false
+      "voluntaryEsg": {
+        "footprint": {
+          "carbonFootprint": {
+            "gwpKgCo2e": 345.2,
+            "scope": "cradle_to_gate",
+            "methodology": "Product carbon footprint model aligned with battery manufacturing inventory dataset and allocation rules.",
+            "dataSource": "Voltis LCA Team + third-party verification summary",
+            "confidence": 0.89,
+            "verifiedBy": "Carbon Metrics Verification GmbH",
+            "verificationDate": "2026-04-18",
+            "notes": "Aggregate product-level footprint for one battery pack."
+          },
+          "waterConsumption": {
+            "litersPerUnit": 1280,
+            "scope": "production",
+            "methodology": "Supplier and plant process water inventory normalized per finished battery pack.",
+            "dataSource": "Manufacturing EMS 2026 Q1",
+            "notes": "Does not include downstream use phase."
+          }
+        },
+        "recycledContent": {
+          "overallPercentage": 12.7,
+          "byMaterial": [
+            {
+              "material": "nickel",
+              "percentage": 14.1,
+              "sourceType": "post_consumer"
+            },
+            {
+              "material": "cobalt",
+              "percentage": 18.5,
+              "sourceType": "post_consumer"
+            },
+            {
+              "material": "lithium",
+              "percentage": 7.2,
+              "sourceType": "pre_consumer"
+            }
+          ],
+          "notes": "Aggregated recycled share across declared critical battery materials."
+        },
+        "packaging": {
+          "type": "corrugated transport box with molded fiber inserts",
+          "material": "corrugated cardboard and molded fiber",
+          "recyclable": true,
+          "recycledContentPercentage": 76,
+          "plasticFreePackaging": true
+        },
+        "supplyChainTransparency": {
+          "transparencyLevel": "tier2",
+          "suppliers": [
+            {
+              "tier": "tier1",
+              "name": "Voltis Battery Assembly Plant Wroclaw",
+              "country": "PL",
+              "role": "battery pack assembly",
+              "auditDate": "2026-03-15"
+            },
+            {
+              "tier": "tier2",
+              "name": "NordCell Cathode Materials Oy",
+              "country": "FI",
+              "role": "cathode active material supplier",
+              "auditDate": "2026-02-10"
+            },
+            {
+              "tier": "tier2",
+              "name": "GraphCore Materials Ltd.",
+              "country": "CN",
+              "role": "anode material supplier",
+              "auditDate": "2026-01-28"
+            }
+          ]
+        }
+      },
+      "systemMetadata": {
+        "platform": {
+          "generatorName": "PassportAI Compliance Platform",
+          "generatorVersion": "1.0.0",
+          "generationMethod": "hybrid",
+          "humanReviewStatus": "approved"
+        },
+        "qualityAssessment": {
+          "readinessScore": 93,
+          "readinessScoreBreakdown": {
+            "essentialFields": 58,
+            "recommendedFields": 20,
+            "documentsAttached": 10,
+            "photoStandardized": 5,
+            "total": 93,
+            "max": 100
+          },
+          "missingFields": []
+        },
+        "technicalAssets": {
+          "contentHash": "sha256:4fb0e2d6aaf2d5d4288cb22e2a1a6b5066fdd7f68c75a0aa5bf44d31f46311c3",
+          "attachments": [
+            {
+              "name": "EU Declaration of Conformity",
+              "type": "application/pdf",
+              "url": "https://passportai.example.com/docs/vbp-48-105/doc-eu-2026-041.pdf",
+              "hash": "sha256:doc041hash"
+            },
+            {
+              "name": "Technical Documentation",
+              "type": "application/pdf",
+              "url": "https://passportai.example.com/docs/vbp-48-105/technical-file.pdf",
+              "hash": "sha256:techfilehash"
+            },
+            {
+              "name": "Safety Instructions",
+              "type": "application/pdf",
+              "url": "https://passportai.example.com/docs/vbp-48-105/safety-instructions.pdf",
+              "hash": "sha256:safetyhash"
+            }
+          ]
+        }
       }
-    ],
-
-    "substancesOfConcern": {
-      "reachSvhcPresent": false,
-      "rohsApplicable": false,
-      "checkDate": "2025-04-13",
-      "svhcList": [],
-      "notes": "Water-based screen printing ink used. No hazardous substances identified under REACH Annex XVII or SVHC candidate list (as of ECHA update 2024-01)."
-    },
-
-    "countryOfManufacture": "UA",
-    "countryOfOrigin": "UA",
-    "yearOfManufacture": 2025,
-
-    "carbonFootprint": {
-      "gwp_kg_co2e": 3.2,
-      "scope": "cradle-to-gate",
-      "methodology": "Estimated using ecoinvent 3.9 proxy factors for organic cotton textile production. Excludes use phase and end-of-life.",
-      "confidence": 0.55,
-      "dataSource": "PassportAI LCA Specialist Agent v1.0",
-      "verifiedBy": null,
-      "verificationDate": null,
-      "notes": "Low confidence due to absence of primary energy data from supplier. Recommend full LCA study for Level 3 compliance."
-    },
-
-    "recycledContent": {
-      "percentage": 0,
-      "materials": [],
-      "notes": "Virgin organic cotton. No post-consumer recycled content by design (GOTS organic certification requires virgin fibre traceability)."
-    },
-
-    "waterConsumption": {
-      "liters_per_unit": 2800,
-      "scope": "production",
-      "methodology": "Estimated based on average cotton cultivation water footprint (Water Footprint Network, 2023). Organic farming reduces pesticide runoff but does not significantly reduce water volume.",
-      "dataSource": "WFN Cotton Benchmark 2023",
-      "notes": "Significant improvement potential via drip irrigation at raw material stage."
-    },
-
-    "certifications": [
-      {
-        "name": "Global Organic Textile Standard (GOTS)",
-        "version": "6.0",
-        "issuer": "GOTS Certification Body Ukraine",
-        "certificateNumber": "GOTS-UA-2024-Brand-001",
-        "validFrom": "2024-03-01",
-        "validUntil": "2025-02-28",
-        "documentUrl": null,
-        "scope": "Organic cotton fabric + manufacturing facility"
-      },
-      {
-        "name": "OEKO-TEX Standard 100",
-        "version": "2024",
-        "issuer": "OEKO-TEX Association",
-        "certificateNumber": null,
-        "validFrom": null,
-        "validUntil": null,
-        "documentUrl": null,
-        "scope": "PENDING — recommended for EU market",
-        "status": "not_obtained"
-      }
-    ],
-
-    "declarationOfConformity": {
-      "present": false,
-      "reason": "Declaration of Conformity (DoC) is not required for textile products under current ESPR framework. Mandatory CE marking does not apply to this product category.",
-      "documentUrl": null
-    },
-
-    "technicalDocumentation": {
-      "present": true,
-      "documentType": "Product Technical File",
-      "lastUpdated": "2025-04-01",
-      "documentUrl": null,
-      "storageLocation": "internal",
-      "contents": [
-        "Material composition certificates",
-        "GOTS facility certificate",
-        "Screen printing ink safety data sheet",
-        "Production process description",
-        "Quality control records"
-      ]
-    },
-
-    "photo": {
-      "url": "http://localhost:8000/3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b/photo",
-      "width": 800,
-      "height": 800,
-      "format": "image/png",
-      "backgroundRemoved": true,
-      "standardized": true,
-      "capturedAt": "2025-04-13T09:00:00Z"
-    },
-
-    "repairabilityScore": null,
-    "repairabilityScoreNote": "Repairability score not applicable to this textile product category under current ESPR implementing acts.",
-
-    "durabilityYears": 5,
-    "durabilityTestMethod": "Estimated based on material quality and stitching standard. No accelerated aging test performed.",
-
-    "endOfLifeInstructions": {
-      "recyclable": true,
-      "recyclingInstructions": "100% cotton content makes this bag fully recyclable through textile recycling streams. Remove any non-cotton labels before recycling.",
-      "compositable": true,
-      "compostingInstructions": "Industrial compostable — cotton canvas will biodegrade in industrial composting facility within 6 months.",
-      "repairServiceAvailable": true,
-      "repairContact": "repair@brand.com.ua",
-      "takeback": false
-    },
-
-    "disassemblyInstructions": null,
-
-    "warrantyYears": 1,
-    "warrantyUrl": "https://brand.com.ua/warranty",
-
-    "userManualUrl": "https://brand.com.ua/care-instructions",
-    "careInstructions": "Machine wash 30°C, do not tumble dry, iron on medium heat, do not bleach.",
-
-    "sparePartsAvailabilityYears": null,
-    "sparePartsNote": "Spare parts not applicable to textile products.",
-
-    "packaging": {
-      "type": "paper bag",
-      "material": "recycled kraft paper 100%",
-      "recyclable": true,
-      "plasticFreePackaging": true
-    },
-
-    "supplyChain": {
-      "tier1Supplier": "Brand Production Studio, Kyiv, UA",
-      "tier2Supplier": "Organic Cotton Mill, Poltava, UA",
-      "transparencyLevel": "tier2",
-      "auditDate": "2024-09-15"
-    },
-
-    "dppIssuer": "PassportAI",
-    "dppVersion": "1.0",
-    "dppIssuedAt": "2025-04-13T09:00:00Z",
-    "dppValidUntil": "2035-04-13T09:00:00Z",
-    "dppGeneratedBy": "PassportAI v1.0 —Gemma 4 e:4b",
-    "dppGenerationMethod": "AI-assisted from product photo + description. Human review recommended before official use.",
-
-    "readinessScore": 72,
-    "readinessScoreBreakdown": {
-      "essential_fields": 48,
-      "recommended_fields": 16,
-      "documents_attached": 5,
-      "photo_standardized": 5,
-      "total": 72,
-      "max": 100
-    },
-
-    "missingFields": [
-      {
-        "field": "certifications[1].certificateNumber",
-        "severity": "recommended",
-        "action": "Obtain OEKO-TEX Standard 100 certification for EU market readiness",
-        "espr_deadline": "2027-01-01"
-      },
-      {
-        "field": "carbonFootprint.verifiedBy",
-        "severity": "recommended",
-        "action": "Commission third-party LCA study to raise confidence from 0.55 to >0.85",
-        "espr_deadline": "2027-01-01"
-      },
-      {
-        "field": "facilityId.gln",
-        "severity": "recommended",
-        "action": "Register facility with GS1 Ukraine to obtain GLN (Global Location Number)",
-        "espr_deadline": null
-      },
-      {
-        "field": "supplyChain.tier3Supplier",
-        "severity": "optional",
-        "action": "Extend supply chain transparency to tier 3 (cotton farm level)",
-        "espr_deadline": null
-      }
-    ]
+    }
+  },
+  "proof": {
+    "type": "DataIntegrityProof",
+    "cryptosuite": "eddsa-rdfc-2022",
+    "created": "2026-04-20T10:31:00Z",
+    "verificationMethod": "did:web:passportai.example.com#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "zREPLACE_WITH_REAL_ED25519_SIGNATURE"
   }
 }
