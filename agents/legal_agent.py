@@ -182,3 +182,4 @@ class LegalAgent(BaseAgent):
         # except Exception:
         #     return None  # VIES unavailable — don't fail the pipeline
         raise NotImplementedError("LegalAgent._verify_vat() not yet implemented")
+

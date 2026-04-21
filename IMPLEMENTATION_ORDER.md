@@ -1,995 +1,931 @@
-# PassportAI — Порядок реализации v2
+# PassportAI — IMPLEMENTATION ORDER v3
 
-# Архитектурная ревизия: агентная система с Gemma 4 native function calling
+**Цель этой версии:** успеть к **30.04** без потери функциональности.
+**Главное архитектурное решение:**
 
-# + Anti-hallucination architecture (двухфазный контракт, Evidence enum, cross-consistency)
-
-> **Ключевое отличие от v1:** BaseAgent переносится в Неделю 1.
-> Gemma 4 имеет нативный function calling через `tools=[]` в Ollama API.
-> Вся агентная система строится на этом контракте с первого шага.
-
-## Правило: Test-as-you-go
-
-После каждого шага — запусти тест. Не переходи к следующему шагу если тест не прошёл.
+- `PassportPipeline` — **единственный оркестратор**
+- `BaseAgent` — **единственный LLM-контракт**
+- между шагами передаётся **typed state**, а не общий reasoning trace
+- `run_verified_task()` используется **только там, где есть регуляторный / юридический риск**
+- `thinking_orchestrator.py` и отдельный `reasoning_validator.py` **не возвращаются** в архитектуру
 
 ---
 
-## НЕДЕЛЯ 1: Агентный фундамент (13–19 апреля)
+## 0. Замороженные правила архитектуры
 
-Цель: BaseAgent + GemmaClient с нативным tool calling + первый рабочий агент (текст → JSON-LD)
+### 0.1. Что запрещено
 
-### Шаг 1.1 — Ollama + модель (День 1)
+- Ни один агент не вызывает другой агент напрямую.
+- Ни один агент не получает raw reasoning другого агента.
+- Никакой shared `ThinkingContext` как межагентной памяти.
+- Никакой “умный глобальный оркестратор” поверх `PassportPipeline`.
 
-Задача: убедиться что Gemma 4 запускается локально
-Файлы: нет (только shell)
+### 0.2. Что разрешено
 
-```bash
-ollama pull gemma4:e4b
-ollama run gemma4:e4b "Hello, respond with JSON: {\"status\": \"ok\"}"
-```
+- Агенты получают только релевантные входы и возвращают структурированный output.
+- `PassportPipeline` отвечает за порядок шагов, обработку ошибок и сборку результата.
+- `DataAuditAgent` и pipeline-проверки отвечают за cross-agent consistency.
+- `StorageProvider` отвечает за публичный URL, который потом кодируется в QR.
 
-Тест пройден: получили JSON в ответе
+### 0.3. Классы агентов по режиму работы
 
----
+**A. Детерминированные / почти детерминированные**
 
-### Шаг 1.2 — GemmaClient с нативным tool calling (День 1-2)
+- `DataAuditAgent`
+- `LCASpecialist` (lookup CSV)
+- `GS1Specialist`
+- QR / storage / report generation
 
-Файл: `src/core/gemma_client.py`
+**B. Structured extraction**
 
-> ⚠️ ИЗМЕНЕНИЕ vs v1: добавить метод `call_tool()` который использует `tools=[]` параметр
-> Ollama API. Это нативный механизм Gemma 4 — надёжнее любого prompt-JSON parsing.
+- `VisionAgent`
+- `DPPGenerator` (если использует schema-aware fill)
 
-> ⚠️ ПРОВЕРКА ПЕРВЫМ ДЕЛОМ (совет от Gemini — верный): до написания BaseAgent
-> запусти диагностический скрипт ниже. Если Ollama SDK не возвращает `tool_calls` —
-> `call_tool()` автоматически упадёт в `_parse_json_fallback()`. Это нормально.
-> BaseAgent пишется одинаково в обоих случаях — fallback прозрачен для агентов.
+**C. Regulatory / legal interpretation**
 
-```bash
-# Диагностика tool_calls поддержки — запустить ДО шага 1.3
-python -c "
-import ollama
-client = ollama.Client(host='http://localhost:11434')
-resp = client.chat(
-    model='gemma4:e4b',
-    messages=[{'role': 'user', 'content': 'Extract: cotton bag'}],
-    tools=[{'type': 'function', 'function': {
-        'name': 'test', 'description': 'test',
-        'parameters': {'type': 'object', 'properties': {'material': {'type': 'string'}}, 'required': ['material']}
-    }}]
-)
-has_tool_calls = hasattr(resp, 'message') and hasattr(resp.message, 'tool_calls') and bool(resp.message.tool_calls)
-print('Native tool_calls:', 'YES - нативный путь активен' if has_tool_calls else 'NO - будет использован _parse_json_fallback')
-"
-```
+- `RegulatoryConsultant`
+- `LegalAgent`
 
-Методы:
-
-- `generate(prompt) → str` — текстовый ответ (уже есть)
-- `think(prompt) → str` — режим рассуждения (уже есть)
-- `analyze_image(image_path, prompt) → str` — vision (уже есть)
-- `call_tool(prompt, tools: list[dict], system_prompt: str | None) → dict` — **НОВЫЙ**
-
-Реализация `call_tool()`:
-
-````python
-def call_tool(
-    self,
-    prompt: str,
-    tools: list[dict],
-    system_prompt: str | None = None,
-) -> dict:
-    """Call Gemma 4 with native function calling via Ollama tools= parameter.
-
-    Returns the parsed tool_calls dict from the model response.
-    Falls back to _parse_json_response() if model returns text instead of tool call.
-
-    Args:
-        prompt: User prompt describing the task.
-        tools: List of tool definitions in OpenAI function calling format.
-        system_prompt: Optional system context for the agent.
-
-    Returns:
-        dict: Parsed arguments from the first tool call.
-
-    Example tools format:
-        [{
-            "type": "function",
-            "function": {
-                "name": "extract_product_attributes",
-                "description": "Extract product attributes from description",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "category": {"type": "string"},
-                        "materials": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["category", "materials"]
-                }
-            }
-        }]
-    """
-    clean_prompt = prompt.strip()
-    if not clean_prompt:
-        raise ValueError("prompt must not be empty")
-
-    messages: list[ChatMessage] = []
-    if system_prompt:
-        messages.append(ChatMessage(role="system", content=system_prompt))
-    messages.append(ChatMessage(role="user", content=clean_prompt))
-
-    logger.info("Calling tool with model=%s tools=%s", self.model, [t["function"]["name"] for t in tools])
-
-    for attempt in range(1, self.RETRY_ATTEMPTS + 1):
-        try:
-            response = self._client.chat(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                options={"num_ctx": self.DEFAULT_NUM_CTX, "temperature": 0.1},
-            )
-            # Gemma 4 native tool call response
-            if hasattr(response, "message") and hasattr(response.message, "tool_calls"):
-                tool_calls = response.message.tool_calls
-                if tool_calls:
-                    first_call = tool_calls[0]
-                    if hasattr(first_call, "function"):
-                        return dict(first_call.function.arguments)
-            # Fallback: model returned text — parse as JSON
-            text = self._extract_text_from_chat_response(response)
-            return self._parse_json_fallback(text)
-        except Exception as exc:
-            logger.warning("call_tool attempt %d/%d failed: %s", attempt, self.RETRY_ATTEMPTS, exc)
-            if attempt == self.RETRY_ATTEMPTS:
-                raise GemmaResponseError(f"call_tool failed after {self.RETRY_ATTEMPTS} attempts") from exc
-            time.sleep(self.RETRY_DELAY_SECONDS * (self.RETRY_BACKOFF_FACTOR ** (attempt - 1)))
-
-def _parse_json_fallback(self, raw: str) -> dict:
-    """Parse JSON from model text response (fallback when tools= not triggered).
-
-    Strips markdown code fences and returns parsed dict.
-    Used as fallback in call_tool() when model returns text instead of tool call.
-    """
-    import json, re
-    # Remove markdown fences
-    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
-    cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
-    try:
-        return json.loads(cleaned.strip())
-    except json.JSONDecodeError as exc:
-        raise GemmaResponseError(f"Model returned invalid JSON: {raw[:200]}") from exc
-````
-
-Тест:
-
-```bash
-python -c "
-from src.core.gemma_client import GemmaClient
-c = GemmaClient()
-# Test 1: basic generate
-print(c.generate('Say OK'))
-# Test 2: call_tool (native function calling)
-result = c.call_tool(
-    prompt='Product: cotton tote bag, made in Ukraine',
-    tools=[{
-        'type': 'function',
-        'function': {
-            'name': 'extract_product',
-            'description': 'Extract product info',
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'category': {'type': 'string'},
-                    'materials': {'type': 'array', 'items': {'type': 'string'}}
-                },
-                'required': ['category', 'materials']
-            }
-        }
-    }]
-)
-print('Tool result:', result)
-assert 'materials' in result
-print('call_tool OK')
-"
-```
-
-Тест пройден: `call_tool OK` и `materials` в результате
+Только группа **C** использует `run_verified_task()`.
 
 ---
 
-### Шаг 1.3 — BaseAgent (День 2) ← ПЕРЕНЕСЁН ИЗ 3.1 + ДВУХФАЗНЫЙ КОНТРАКТ
+## 1. Что уже считается сделанным
 
-Файл: `agents/base_agent.py`
+### 1.1 — Ollama + модель
 
-> ⚠️ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: BaseAgent теперь в Неделе 1, ДО любых агентов.
-> Это контракт для всей агентной системы. Все агенты (VisionAgent, RegulatoryConsultant,
-> LegalAgent, LCASpecialist, DataAuditAgent, GS1Specialist) наследуют именно этот класс.
->
-> ⚠️ НОВОЕ: метод `run_verified_task()` — двухфазный контракт anti-hallucination.
-> Phase 1: think() — модель показывает рассуждение, ищет противоречия.
-> Phase 2: call_tool() — структурирует ТОЛЬКО то, о чём уже «подумала».
-> Используй для агентов с регуляторными данными (Regulatory, Legal).
-> Для Vision и LCA — обычный call_tool() (там данные детерминированы иначе).
+**Статус:** DONE
 
-```python
-from abc import ABC, abstractmethod
-import logging
-from typing import Any
-from src.core.gemma_client import GemmaClient
+### 1.2 — `GemmaClient`
 
+**Статус:** DONE
 
-class BaseAgent(ABC):
-    """Base class for all PassportAI agents.
+Должно уже быть:
 
-    Provides:
-    - Standard __init__ with GemmaClient
-    - Abstract run() method — each agent implements its own logic
-    - call_tool() shortcut — Gemma 4 native function calling
-    - run_verified_task() — двухфазный think→call_tool для регуляторных агентов
-    - _parse_json_fallback() — fallback для text responses
-    - Logging with agent class name
-    """
+- `generate()`
+- `think()`
+- `analyze_image()`
+- `call_tool()`
+- retry / timeout / JSON fallback
 
-    def __init__(self, client: GemmaClient) -> None:
-        self.client = client
-        self.logger = logging.getLogger(self.__class__.__name__)
+### 1.3 — `BaseAgent`
 
-    @abstractmethod
-    def run(self, **kwargs) -> dict[str, Any]:
-        """Execute the agent's task. Must be implemented by subclasses."""
-        ...
+**Статус:** DONE
 
-    def call_tool(
-        self,
-        prompt: str,
-        tools: list[dict],
-        system_prompt: str | None = None,
-    ) -> dict:
-        """Single-phase: direct call_tool. Use for Vision, LCA, GS1."""
-        return self.client.call_tool(prompt, tools, system_prompt)
+Должно уже быть:
 
-    def run_verified_task(
-        self,
-        prompt: str,
-        tools: list[dict],
-        system_prompt: str | None = None,
-    ) -> dict:
-        """Two-phase anti-hallucination contract.
+- единый `__init__`
+- `call_tool()`
+- `run_verified_task()`
+- `_load_prompt()`
+- `_format_success()` / `_format_error()`
+- единый `AgentResult`
 
-        Phase 1 — think(): model reasons about the input, surfaces
-        contradictions, cites regulation knowledge before committing.
-        Phase 2 — call_tool(): structures ONLY what was reasoned in Phase 1.
+### 1.4 — DPP schema / JSON structure
 
-        Use for: RegulatoryConsultant, LegalAgent.
-        Do NOT use for: VisionAgent (visual facts), LCASpecialist (lookup table),
-        GS1Specialist (deterministic math).
+**Статус:** DONE
 
-        Why this works: if the model's thinking says one thing and the tool
-        call says another — that contradiction is visible in logs.
-        Self-correction before output, not after.
-        """
-        self.logger.info("%s: Phase 1 — thinking", self.__class__.__name__)
-        thinking_result = self.client.think(prompt)
-        self.logger.debug("%s: thinking output: %s", self.__class__.__name__, thinking_result[:300])
+Должно уже быть:
 
-        # Phase 2: inject thinking result into call_tool prompt
-        verified_prompt = (
-            f"{prompt}\n\n"
-            f"[Internal analysis completed. Key reasoning:]\n{thinking_result}\n\n"
-            f"Now structure the above analysis into the required format."
-        )
-        self.logger.info("%s: Phase 2 — structuring via call_tool", self.__class__.__name__)
-        return self.client.call_tool(verified_prompt, tools, system_prompt)
-
-    def think(self, prompt: str) -> str:
-        """Delegate to GemmaClient.think() — extended reasoning mode."""
-        return self.client.think(prompt)
-
-    def _parse_json_fallback(self, raw: str) -> dict:
-        """Delegate to GemmaClient._parse_json_fallback()."""
-        return self.client._parse_json_fallback(raw)
-```
-
-Тест:
-
-```bash
-python -c "
-from agents.base_agent import BaseAgent
-from src.core.gemma_client import GemmaClient
-
-class TestAgent(BaseAgent):
-    def run(self, **kwargs): return {'ok': True}
-
-a = TestAgent(None)
-# Test 1: _parse_json_fallback
-
-ok = a._format_success({'ok': True})
-assert ok['success'] is True
-assert ok['agent'] == 'TestAgent'
-
-err = a._format_error('boom')
-assert err['success'] is False
-assert err['agent'] == 'TestAgent'
-
-print('AgentResult contract OK')
-# Test 2: run_verified_task exists and is callable
-assert callable(getattr(a, 'run_verified_task', None))
-print('run_verified_task OK')
-print('BaseAgent v2.1 OK')
-"
-```
-
-Тест пройден: `BaseAgent v2.1 OK`
+- `DPP_SCHEMA.json`
+- category schemas в `schemas/`
+- базовый JSON-LD/VCDM каркас
 
 ---
 
-### Шаг 1.4 — DPP Schema (День 2)
+# 2. Реальный план до 30.04
 
-Файл: `schemas/universal_dpp.json`
-Задача: базовая JSON схема пустого DPP (все поля, типы, required)
-(без изменений vs v1)
+## Общая стратегия
 
-Тест:
+Не делать “всех реальных агентов, а потом интеграцию”.
 
-```bash
-python -c "import json; s=json.load(open('schemas/universal_dpp.json')); print('OK', len(s))"
-```
+Делать так:
 
----
-
-### Шаг 1.5 — DPPGenerator (текст only) (День 3)
-
-Файл: `src/core/dpp_generator.py` + `prompts/dpp_generation.txt`
-
-> ⚠️ ИЗМЕНЕНИЕ vs v1: DPPGenerator теперь использует `client.call_tool()` вместо
-> `client.generate()` + ручного JSON parsing. Schema для DPP передаётся как tool definition.
-> Если DPPGenerator вырастет до God Object — переименовать в DPPOrchestrator
-> и вынести pipeline-логику в `src/core/pipeline.py` (шаг 3.0 ниже).
-
-Метод: `generate_from_text(description: str) → dict`
-
-Пример с нативным tool calling:
-
-```python
-DPP_TOOL = [{
-    "type": "function",
-    "function": {
-        "name": "create_dpp_passport",
-        "description": "Create EU Digital Product Passport in VCDM 2.0 JSON-LD format",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "@context": {"type": "array"},
-                "type": {"type": "array"},
-                "credentialSubject": {
-                    "type": "object",
-                    "properties": {
-                        "productName": {"type": "string"},
-                        "materialComposition": {"type": "array"},
-                        "countryOfManufacture": {"type": "string"},
-                        "gwp_kg_co2e": {"type": "number"}
-                    }
-                }
-            },
-            "required": ["@context", "type", "credentialSubject"]
-        }
-    }
-}]
-
-def generate_from_text(self, description: str) -> dict:
-    return self.client.call_tool(
-        prompt=f"Create a DPP passport for: {description}",
-        tools=DPP_TOOL,
-        system_prompt="You are an EU DPP expert. Generate ESPR-compliant Digital Product Passports."
-    )
-```
-
-```
-# DPPGenerator — два слоя
-
-# Слой 1: Python владеет структурой (неизменно)
-BASE_TEMPLATE = {
-    "@context": [
-        "https://www.w3.org/ns/credentials/v2",
-        "https://passportai.io/contexts/dpp/v1"
-    ],
-    "type": ["VerifiableCredential", "DigitalProductPassport"],
-    "issuer": "did:web:passportai.io",
-    "credentialSubject": {
-        "type": "ProductPassport",
-        "productIdentifier": None,   # ← GS1Specialist заполнит
-        "manufacturer": None,        # ← user_input
-        "materialComposition": [],   # ← VisionAgent + user_input
-        "countryOfManufacture": None,
-        "gwp_kg_co2e": None,         # ← LCASpecialist заполнит
-        "sustainabilityScore": None,
-        "repairabilityScore": None,
-        "endOfLifeInstructions": None,
-    }
-}
-
-# Слой 2: LLM возвращает ТОЛЬКО значения (филлы)
-FILL_TOOL = [{
-    "type": "function",
-    "function": {
-        "name": "fill_product_fields",
-        "description": "Extract product field values only. No JSON-LD structure.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "productName":          {"type": "string"},
-                "materialComposition":  {"type": "array", "items": {"type": "string"}},
-                "countryOfManufacture": {"type": "string"},
-                "description":          {"type": "string"},
-            },
-            "required": ["productName", "materialComposition"]
-        }
-    }
-}]
-
-# Слой 3: Python собирает финальный паспорт
-def build_passport(self, fills: dict) -> dict:
-    passport = copy.deepcopy(BASE_TEMPLATE)
-    passport["id"] = f"urn:uuid:{uuid4()}"
-    passport["issuanceDate"] = datetime.utcnow().isoformat() + "Z"
-    # Каждый агент вносит свои поля
-    cs = passport["credentialSubject"]
-    cs["productName"] = fills.get("productName")
-    cs["materialComposition"] = fills.get("materialComposition", [])
-    # ... и т.д.
-    return passport
-```
-
-Тест:
-
-```bash
-python -c "
-from src.core.gemma_client import GemmaClient
-from src.core.dpp_generator import DPPGenerator
-client = GemmaClient()
-gen = DPPGenerator(client)
-passport = gen.generate_from_text('Cotton tote bag, made in Ukraine')
-print(passport.get('@context'))
-print(passport.get('type'))
-"
-```
-
-Тест пройден: `@context` и `type` содержит `VerifiableCredential`
+1. Зафиксировать pipeline contracts
+2. Собрать mock end-to-end
+3. По одному заменять mocks на real implementation
+4. Только потом делать AWS-слой хранения / публикации
 
 ---
 
-### Шаг 1.6 — JSON-LD валидация + офлайн кэш (День 3)
+## День 1 (утро) — Шаг 1.5 + Шаг 3.0
 
-(без изменений vs v1 — pyld + local documentLoader)
+# Шаг 1.5 — `PipelineState` + `PipelineResult`
 
----
+**Новые / изменяемые файлы:**
 
-### Шаг 1.7 — Промпт refinement в Colab (День 3-4)
+- `src/core/pipeline.py`
+- возможно `src/config.py`
 
-(без изменений vs v1 — T4 GPU, 10 итераций, финальный тест локально)
+### Что сделать
 
----
+Создать typed state, через который пойдёт весь pipeline.
 
-### Шаг 1.8 — StorageProvider интерфейс (День 4-5) ← ПЕРЕНЕСЁН ИЗ 3.8
-
-Файлы: `src/storage/base.py`, `src/storage/local.py`
-
-> ⚠️ ПЕРЕНОС ИЗ 3.8: Storage — чистый интерфейс без зависимости от агентов или UI.
-> Pipeline (шаг 3.0) не может генерировать URL для QR-кода без Storage.
-> LocalStorage нужен раньше чем QR Generator.
-> AWS S3 реализацию пишем позже (неделя 3 или 4), но интерфейс фиксируем сейчас.
-
-```python
-class StorageProvider(ABC):
-    def save_package(self, passport_id: str, files: dict[str, Path]) -> str: ...
-    def get_public_url(self, passport_id: str, filename: str) -> str: ...
-```
-
-Тест LOCAL:
-
-```bash
-python -c "
-from src.storage.local import LocalStorage
-from pathlib import Path
-s = LocalStorage(output_dir='./output', hosting_url='http://localhost:8000')
-url = s.save_package('test-uuid-123', {'passport.json': Path('DPP_SCHEMA.json')})
-print('URL:', url)
-import os
-assert os.path.exists('./output/test-uuid-123/passport.json')
-print('Local storage OK')
-"
-```
-
-### Шаг 1.9 — Базовый скелет app.py (День 5)
-
-(без изменений vs v1 — только проверка импортов)
-
-**ИТОГ НЕДЕЛИ 1:**
-
-- ✅ BaseAgent — контракт агентной системы
-- ✅ GemmaClient с нативным call_tool()
-- ✅ DPPGenerator использует native function calling
-- ✅ StorageProvider интерфейс зафиксирован
-- ✅ `python -c "..."` генерирует JSON-LD DPP из текстового описания
-
----
-
-## НЕДЕЛЯ 2: Multimodal (20–26 апреля)
-
-Цель: фото + текст → JSON-LD + стандартизированное фото
-
-### Шаг 2.1 — analyze_image() в GemmaClient (День 1-2)
-
-(без изменений vs v1 — уже реализован в gemma_client_clean.py)
-
----
-
-### Шаг 2.2 — VisionAgent (День 2-3) ← ПЕРЕИМЕНОВАН И ПЕРЕМЕЩЁН
-
-Файлы: `agents/vision_agent.py` + `prompts/vision_analysis.txt`
-
-> ⚠️ ИЗМЕНЕНИЕ vs v1: файл ТЕПЕРЬ в `agents/`, НЕ в `src/core/vision.py`.
-> VisionAgent наследует BaseAgent (уже готов из шага 1.3).
-> Метод run() использует client.call_tool() с нативным tool calling.
-
-```python
-from agents.base_agent import BaseAgent
-
-VISION_TOOL = [{
-    "type": "function",
-    "function": {
-        "name": "extract_product_attributes",
-        "description": "Extract product attributes from image analysis",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "enum": ["textiles", "electronics", "furniture", "packaging"]},
-                "materials": {"type": "array", "items": {"type": "string"}},
-                "colors": {"type": "array", "items": {"type": "string"}},
-                "dimensions_estimate": {
-                    "type": "object",
-                    "properties": {
-                        "width_cm": {"type": "number"},
-                        "height_cm": {"type": "number"}
-                    }
-                },
-                "certifications_visible": {"type": "array", "items": {"type": "string"}},
-                "special_markings": {"type": "array", "items": {"type": "string"}}
-            },
-            "required": ["category", "materials", "colors"]
-        }
-    }
-}]
-
-class VisionAgent(BaseAgent):
-    def run(self, image_path: str, description: str = "") -> dict:
-        # Step 1: analyze image (vision capability)
-        image_description = self.client.analyze_image(
-            image_path,
-            "Describe all visible product attributes: materials, colors, markings, dimensions"
-        )
-        # Step 2: extract structured attributes via native tool call
-        combined_prompt = f"Image analysis: {image_description}\nUser description: {description}"
-        return self.call_tool(
-            prompt=combined_prompt,
-            tools=VISION_TOOL,
-            system_prompt="You are a product attribute extraction specialist for EU compliance."
-        )
-
-    # Keep legacy method name for backward compatibility with DPPGenerator
-    def extract_product_attributes(self, image_path: str, description: str) -> dict:
-        return self.run(image_path=image_path, description=description)
-```
-
-Тест: запустить на фото шопера Brand → `category == "textiles"`
-
----
-
-### Шаг 2.3 — PhotoProcessor (День 2)
-
-Файл: `src/processing/photo.py`
-
-> Примечание: это НЕ агент — нет LLM, только PIL + rembg.
-> Правильное имя: PhotoProcessor, не PhotoAgent.
-> (без изменений vs v1)
-
----
-
-### Шаг 2.4 — Merge функция (День 3)
-
-(без изменений vs v1 — user_input всегда приоритет над vision_output)
-
----
-
-### Шаг 2.5 — Интегрированный pipeline фото+текст (День 4-5)
-
-(без изменений vs v1 — generate_from_photo_and_text)
-
-**ИТОГ НЕДЕЛИ 2:** одна функция принимает фото + текст → JSON-LD + стандартизированное фото
-
----
-
-## НЕДЕЛЯ 3: Full DPP Package (27 апр – 3 мая)
-
-Цель: все 5 агентов работают, полный `output/{uuid}/` пакет
-
-> Примечание: BaseAgent уже готов (шаг 1.3). VisionAgent уже готов (шаг 2.2).
-> На этой неделе только 4 новых агента + Pipeline + отчёты.
-
-### Шаг 3.0 — PassportPipeline / DPPOrchestrator (День 1) ← НОВЫЙ ШАГ
-
-Файл: `src/core/pipeline.py`
-
-> ⚠️ НОВЫЙ ШАГ которого не было в v1.
-> DPPGenerator рискует стать God Object (4+ методов, все разные ответственности).
-> PassportPipeline — единственный класс который знает ПОРЯДОК шагов.
-> Он не вычисляет — он координирует. Это и есть архитектура агентной системы.
+### Минимальная структура
 
 ```python
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 @dataclass
-class PipelineResult:
-    """Typed result of passport generation pipeline.
+class PipelineState:
+    image_path: str
+    description: str
+    gtin: str | None = None
+    certificates: list[str] = field(default_factory=list)
+    storage_mode: str = "local"
 
-    Replaces untyped dict that was previously passed to Gradio UI.
-    Gradio receives this object — fields are explicit, not magic strings.
-    """
-    passport_id: str
-    passport_json: dict[str, Any]
-    readiness_score: int
-    missing_essential: list[str]
-    missing_recommended: list[str]
-    legal_flags: list[str]
-    gwp_kg_co2e: float | None
-    gwp_confidence: float | None
-    files: dict[str, Path] = field(default_factory=dict)
-    public_url: str | None = None
+    standardized_photo_path: str | None = None
+    image_description: str | None = None
+
+    vision_result: dict[str, Any] | None = None
+    regulatory_result: dict[str, Any] | None = None
+    legal_result: dict[str, Any] | None = None
+    lca_result: dict[str, Any] | None = None
+    gs1_result: dict[str, Any] | None = None
+
+    passport_json: dict[str, Any] | None = None
+    audit_result: dict[str, Any] | None = None
+
+    passport_id: str | None = None
+    passport_url: str | None = None
+    qr_path: str | None = None
+
+    warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
-
-class PassportPipeline:
-    """Orchestrates the full DPP generation pipeline.
-
-    Knows the order of steps. Does not compute — delegates to agents.
-    Single source of truth for: what runs, in what order, with what data.
-
-    Step order (deterministic):
-    1. VisionAgent + PhotoProcessor — ПАРАЛЛЕЛЬНО (asyncio.gather)
-       VisionAgent: LLM (медленно, ждёт модель)
-       PhotoProcessor: rembg CPU (независимо от LLM)
-    2. DPPGenerator — generate draft passport
-    3. RegulatoryConsultant — ESPR classification (run_verified_task: think→call_tool)
-    4. LegalAgent — compliance flags (run_verified_task: think→call_tool)
-    5. LCASpecialist — carbon footprint (call_tool + lookup table)
-    6. DataAuditAgent — readiness score + cross_agent_consistency_check
-    7. GS1Specialist — GS1 Digital Link + DID (детерминированный)
-    8. GapReportGenerator — PDF (включает conflicts из DataAuditAgent)
-    9. StorageProvider — save package, get public URL
-    10. QRGenerator — ПОСЛЕДНИЙ (нужен финальный URL из Storage)
-    """
-
-    def __init__(self, agents: dict, storage: StorageProvider):
-        self.agents = agents
-        self.storage = storage
-
-    async def run(self, image_path: str | None, description: str, user_inputs: dict) -> PipelineResult:
-        """Run full pipeline. Async to support parallel Vision+Photo step."""
-        import asyncio
-
-        # Step 1: PARALLEL — Vision (LLM) + Photo (CPU rembg), independent
-        vision_task = asyncio.create_task(
-            asyncio.to_thread(self.agents['vision'].run, image_path, description)
-        ) if image_path else None
-        photo_task = asyncio.create_task(
-            asyncio.to_thread(self.agents['photo'].standardize_photo, image_path)
-        ) if image_path else None
-
-        vision_result = await vision_task if vision_task else {}
-        photo_path = await photo_task if photo_task else None
-
-        # Steps 2-10: sequential (each depends on previous)
-        ...
+@dataclass
+class PipelineResult:
+    success: bool
+    passport_id: str | None
+    passport_json: dict[str, Any] | None
+    readiness_score: int | None
+    passport_url: str | None
+    qr_path: str | None
+    warnings: list[str]
+    errors: list[str]
 ```
 
-Тест: инстанциировать PassportPipeline с mock агентами → проверить что Vision и Photo вызываются параллельно
+### Зачем это нужно
+
+Чтобы все остальные шаги подключались к одному стабильному контракту.
+
+### Definition of Done
+
+- `src/core/pipeline.py` компилируется
+- `PipelineState` и `PipelineResult` существуют
+- нигде не осталось зависимости от `ThinkingOrchestrator`
 
 ---
 
-### Шаг 3.1 — RegulatoryConsultant (День 1-2)
+# Шаг 3.0 — `PassportPipeline` skeleton
 
-Наследует BaseAgent. Использует **`run_verified_task()`** (двухфазный).
+**Файл:** `src/core/pipeline.py`
 
-> Почему двухфазный: дедлайны ESPR регуляций (2026, 2027, 2030) — это конкретные факты.
-> Если модель «думает» перед ответом, она цитирует свои знания о регуляциях явно.
-> Если в thinking написано «2027» а в tool call «2025» — это флаг для проверки.
+### Что сделать
 
-Выход обязательно содержит `evidence` блок (см. стандарт ниже).
+Создать **единственный оркестратор системы**.
 
----
+### Pipeline responsibilities
 
-### Шаг 3.2 — LegalAgent (День 2)
+- принимает `PipelineState`
+- вызывает шаги по порядку
+- собирает warnings/errors
+- останавливается на критических фейлах
+- возвращает `PipelineResult`
 
-Наследует BaseAgent. Использует **`run_verified_task()`** (двухфазный).
+### Минимальные методы
 
-> Почему двухфазный: REACH SVHC список, RoHS директива, CE требования —
-> модель должна «вспомнить» основание перед тем как поставить флаг.
-> Ложноположительный флаг REACH хуже чем отсутствие флага — он пугает клиента.
+- `run(state: PipelineState) -> PipelineResult`
+- `_run_perception_step()`
+- `_run_generation_step()`
+- `_run_review_step()`
+- `_run_packaging_step()`
+- `_build_result()`
 
-Выход обязательно содержит `evidence` блок (см. стандарт ниже).
+### Важно
 
----
+Никакой shared reasoning логики внутри pipeline.
 
-### Шаг 3.3 — LCASpecialist (День 2-3)
+### Definition of Done
 
-(без изменений vs v1, lookup table gwp_coefficients.csv + call_tool())
-
----
-
-### Шаг 3.4 — DataAuditAgent (День 3) ← РАСШИРЕН: cross-consistency check
-
-Наследует BaseAgent. Использует **детерминированную логику** (не LLM для сравнения).
-
-> ⚠️ DataAuditAgent теперь последний перед GapReport — он получает результаты
-> ВСЕХ предыдущих агентов и проверяет согласованность. Это не LLM задача —
-> это Python сравнение dict значений. Надёжно и быстро.
-
-```python
-def cross_agent_consistency_check(
-    self,
-    vision_result: dict,
-    dpp_draft: dict,
-    regulatory_result: dict,
-    strict_mode: bool = False,  # False = флаг в Gap Report, True = блокировка
-) -> dict:
-    """Deterministic consistency check across agent outputs.
-
-    Compares key attributes between agents — no LLM involved.
-    strict_mode=False (default): flags conflicts, does NOT block pipeline.
-    strict_mode=True: raises ConsistencyError, blocks QR generation.
-
-    For MVP demo: always use strict_mode=False.
-    For production: set strict_mode=True.
-    """
-    conflicts = []
-
-    # Check 1: category consistency
-    vision_cat = vision_result.get("category", "").lower()
-    reg_cat = regulatory_result.get("espr_category", "").lower()
-    if vision_cat and reg_cat and vision_cat != reg_cat:
-        conflicts.append({
-            "field": "category",
-            "vision": vision_cat,
-            "regulatory": reg_cat,
-            "message": f"VisionAgent detected '{vision_cat}' but RegulatoryConsultant classified as '{reg_cat}'"
-        })
-
-    # Check 2: materials consistency (intersection check)
-    vision_mats = set(m.lower() for m in vision_result.get("materials", []))
-    dpp_mats_raw = dpp_draft.get("credentialSubject", {}).get("materialComposition", [])
-    dpp_mats = set(m.lower() if isinstance(m, str) else str(m).lower() for m in dpp_mats_raw)
-    if vision_mats and dpp_mats and vision_mats.isdisjoint(dpp_mats):
-        conflicts.append({
-            "field": "materials",
-            "vision": list(vision_mats),
-            "dpp_draft": list(dpp_mats),
-            "message": "No material overlap between VisionAgent and DPPGenerator outputs"
-        })
-
-    if conflicts and strict_mode:
-        raise ConsistencyError(f"Pipeline blocked: {len(conflicts)} data conflicts detected", conflicts)
-
-    return {
-        "conflict_detected": len(conflicts) > 0,
-        "conflicts": conflicts,
-        "strict_mode": strict_mode,
-    }
-```
-
-Выход DataAuditAgent (расширенный):
-
-```json
-{
-  "readiness_score": 54,
-  "missing_essential": ["manufacturer", "materialComposition"],
-  "missing_recommended": ["recycledContent", "waterConsumption"],
-  "inconsistencies": [],
-  "warnings": ["countryOfManufacture not matching facilityId.address"],
-  "conflict_detected": false,
-  "conflicts": []
-}
-```
-
-Тест:
-
-```bash
-python -c "
-from agents.data_audit_agent import DataAuditAgent
-agent = DataAuditAgent(None)
-# Test: vision says textiles, regulatory says electronics → conflict
-result = agent.cross_agent_consistency_check(
-    vision_result={'category': 'textiles', 'materials': ['cotton']},
-    dpp_draft={'credentialSubject': {'materialComposition': ['polyester']}},
-    regulatory_result={'espr_category': 'electronics'},
-    strict_mode=False
-)
-assert result['conflict_detected'] == True
-assert len(result['conflicts']) == 2  # category + materials
-print('cross_agent_consistency_check OK — conflicts flagged, pipeline not blocked')
-"
-```
+- pipeline запускается даже с mock-агентами
+- никакого `await` вне async-функции
+- порядок шагов зафиксирован в одном месте
 
 ---
 
-### Шаг 3.5 — GS1Specialist (День 3-4)
+## День 1 (вечер) — mock end-to-end demo
 
-(без изменений vs v1, GTIN validation + DID + digital link)
+# Шаг 1.6 — `DPPGenerator` MVP (не “идеальный”, а рабочий)
 
----
+**Файл:** `src/core/dpp_generator.py`
 
-### Шаг 3.6 — GapReportGenerator (День 4)
+### Что сделать
 
-(без изменений vs v1, jinja2 + weasyprint → PDF)
+Сначала не multimodal и не “умный генератор”, а **стабильный schema-aware filler**.
 
----
+### Минимум для MVP
 
-### Шаг 3.7 — AWS S3 Storage (День 4-5) ← ТОЛЬКО S3, интерфейс уже есть
+- `generate_from_text(description)`
+- `_build_jsonld_wrapper()`
+- выбор schema по category
+- заполнение минимально обязательных полей
+- `merge_inputs()` уже есть, оставить как utility
 
-Файл: `src/storage/aws_s3.py`
+### Важно
 
-> LocalStorage уже написан в шаге 1.8. Здесь только S3 реализация.
+`DPPGenerator` не должен становиться оркестратором. Он только:
 
----
+- получает уже собранные product facts
+- строит `passport_json`
+- валидирует базовую структуру
 
-### Шаг 3.8 — QR Generator (День 5) ← ВСЕГДА ПОСЛЕДНИЙ
+### Definition of Done
 
-Файл: `src/processing/qr.py`
-(без изменений vs v1 — QR генерируется только после Storage.get_public_url())
-
-**ИТОГ НЕДЕЛИ 3:** end-to-end тест: фото Brand → полный `output/{uuid}/` со всеми 5 файлами
-
----
-
-## НЕДЕЛЯ 4: UI + Demo (4–10 мая)
-
-(без изменений vs v1 — FastAPI + Gradio + Brand тест + видео)
-
-### Шаг 4.1 — FastAPI Passport Server
-
-### Шаг 4.2 — Gradio UI
-
-### Шаг 4.3 — app.py финальный (gr.mount_gradio_app pattern)
-
-### Шаг 4.4 — Тест с Brand ← КРИТИЧЕСКИЙ
-
-### Шаг 4.5 — Демо-видео (OBS Studio, 3 минуты)
+- по тексту можно получить валидный `passport_json`
+- `tests/test_dpp_generator.py` проходят хотя бы для merge + validate + wrapper
 
 ---
 
-## НЕДЕЛЯ 5: Submit (11–18 мая)
+# Шаг 1.7 — `Mock agents` для вертикального среза
 
-(без изменений vs v1)
+**Файлы:**
 
-### Шаг 5.1 — GitHub README
+- `agents/vision_agent.py`
+- `agents/regulatory_consultant.py`
+- `agents/legal_agent.py`
+- `agents/lca_specialist.py`
+- `agents/data_audit_agent.py`
+- `agents/gs1_specialist.py`
 
-### Шаг 5.2 — Kaggle Writeup (1500 слов)
+### Что сделать
 
-### Шаг 5.3 — Live Demo (HF Spaces)
+Для каждого skeleton-агента сделать **временную mock-реализацию**, которая возвращает реалистичный output в финальном формате.
 
-### Шаг 5.4 — Media Gallery (cover 1280x720)
+### Обязательное правило
 
-### Шаг 5.5 — Kaggle Submit (17 мая, safety margin)
+Mock должен возвращать **тот же shape**, что и будущая реальная версия.
 
----
+### Пример
 
-## Сводная таблица изменений v1 → v2.1
+- `VisionAgent.run()` → `{"category": "furniture", "materials": ["oak wood"], ...}`
+- `RegulatoryConsultant.run()` → `{"espr_category": "furniture", "required_fields": [...], ...}`
+- `DataAuditAgent.run()` → `{"readiness_score": 62, "missing_essential": [...], ...}`
 
-| Шаг                  | v1             | v2              | v2.1 (финал)                               | Причина                                             |
-| -------------------- | -------------- | --------------- | ------------------------------------------ | --------------------------------------------------- |
-| BaseAgent            | Шаг 3.1        | Шаг 1.3         | **+ `run_verified_task()`**                | Двухфазный think→call_tool для регуляторных агентов |
-| GemmaClient          | generate()     | + call_tool()   | **+ диагностика SDK перед 1.3**            | Проверить tool_calls до написания BaseAgent         |
-| VisionAgent          | `src/core/`    | `agents/`       | **+ параллельный запуск с PhotoProcessor** | asyncio.gather экономит 1-2 мин                     |
-| StorageProvider      | Шаг 3.8        | Шаг 1.8         | без изменений                              | Нет зависимостей                                    |
-| PassportPipeline     | —              | Шаг 3.0         | **async run() с parallel step 1**          | Vision+Photo параллельно                            |
-| PipelineResult       | `dict`         | dataclass       | без изменений                              | Типизированный выход                                |
-| DPP generation       | prompt+parsing | native tools=   | без изменений                              | Надёжнее                                            |
-| RegulatoryConsultant | промпт         | call_tool()     | **run_verified_task()**                    | Факты регуляций через thinking                      |
-| LegalAgent           | промпт         | call_tool()     | **run_verified_task()**                    | REACH флаги через thinking                          |
-| DataAuditAgent       | поля missing   | readiness_score | **+ cross_agent_consistency_check()**      | Детерминированное сравнение агентов                 |
-| All tool schemas     | нет confidence | —               | **+ `evidence.source_type` enum**          | Машиночитаемый источник данных                      |
+### Definition of Done
+
+- pipeline проходит end-to-end без реального LLM в каждом шаге
+- выходы всех mock-агентов уже совпадают с будущими contracts
 
 ---
 
-## Архитектурная диаграмма (текстовая)
+# Шаг 1.8 — `StorageProvider` MVP
 
-```
-Неделя 1:
-  GemmaClient ──→ call_tool() [native] + _parse_json_fallback() [fallback]
-       │         ↑ диагностика SDK ПЕРВЫМ ДЕЛОМ (шаг 1.2)
-  BaseAgent ──→ run() [abstract] + run_verified_task() [think→call_tool]
-       │
-  DPPGenerator ──→ call_tool() с DPP JSON Schema как tool definition
-       │
-  StorageProvider (interface) + LocalStorage
+**Файлы:**
 
-Неделя 2:
-  VisionAgent(BaseAgent) ──→ analyze_image() → call_tool(VISION_TOOL)
-  PhotoProcessor ──→ rembg + PIL (не LLM, не агент)
+- `src/storage/base.py`
+- `src/storage/local.py`
 
-Неделя 3:
-  PassportPipeline.run() [async] координирует:
-    ┌─────────────────────────────────────────────┐
-    │ ПАРАЛЛЕЛЬНО (asyncio.gather):               │
-    │  VisionAgent [LLM]  +  PhotoProcessor [CPU] │
-    └─────────────────────────────────────────────┘
-         ↓
-    DPPGenerator [call_tool]
-         ↓
-    RegulatoryConsultant [run_verified_task: think→call_tool]
-         ↓
-    LegalAgent [run_verified_task: think→call_tool]
-         ↓
-    LCASpecialist [call_tool + lookup_table CSV]
-         ↓
-    DataAuditAgent [детерминированный + cross_agent_consistency_check]
-         ↓
-    GS1Specialist [детерминированный]
-         ↓
-    GapReportGenerator [PDF + conflicts из DataAuditAgent]
-         ↓
-    Storage.save_package() → public_url
-         ↓
-    QRGenerator [ПОСЛЕДНИЙ — нужен URL]
+### Что сделать
 
-  Каждый агентный выход содержит evidence.source_type + evidence.confidence
-  PipelineResult (dataclass) ──→ типизированный выход в Gradio
+Сначала доделать **только local storage**.
 
-Неделя 4:
-  FastAPI + Gradio ──→ принимает PipelineResult, отдаёт UI
+### Нужная функциональность
 
-Неделя 5:
-  Submit: writeup + video + github + demo + cover
-```
+- `save_package()`
+- `get_public_url()`
+- `file_exists()`
+- `delete_package()`
+
+### Definition of Done
+
+- package сохраняется в `output/{passport_id}/`
+- есть базовый `passport_url`
+- storage уже может быть вызван из pipeline
 
 ---
 
-## Критические заметки по Gemma 4 E4B
+# Шаг 1.9 — `Gradio UI` working demo
 
-1. **Диагностика tool_calls ПЕРВЫМ ДЕЛОМ** (шаг 1.2) — запусти скрипт до написания BaseAgent. Если `tool_calls` нет — `call_tool()` автоматически использует `_parse_json_fallback()`. Поведение одинаково для всех агентов.
+**Файлы:**
 
-2. **think= и tools= конфликтуют** — не используй одновременно. `run_verified_task()` решает это правильно: сначала `think()` (отдельный вызов), потом `call_tool()` (отдельный вызов). Два вызова — не баг, это контракт.
+- `src/ui/gradio_app.py`
+- `app.py`
 
-3. **128K контекст E4B** — используй для RegulatoryConsultant и LegalAgent где нужен полный ESPR контекст. DPP generation: 8192 токенов достаточно.
+### Что сделать
 
-4. **Локальная скорость** — 8-12 tokens/sec на CPU. `run_verified_task()` = два вызова = ~2x время. Для регуляторных агентов это приемлемо (они запускаются один раз). Параллельный шаг Vision+Photo компенсирует часть потерь.
+Собрать рабочее демо:
 
-5. **Evidence блок — стандарт для всех tool schemas** (добавить при написании каждого агента):
+- upload photo
+- description
+- нажать Generate
+- получить JSON preview
+- readiness score
+- QR / placeholder QR
+- ZIP / placeholder package
 
-```json
-"evidence": {
-  "type": "object",
-  "description": "Source and confidence of this output. Required for audit trail.",
-  "properties": {
-    "source_type": {
-      "type": "string",
-      "description": "Where this data comes from. Use: internal_csv (gwp_coefficients.csv), regulation_text (ESPR/REACH/RoHS), visual_analysis (image), user_input (form field), llm_knowledge (model's training data)",
-      "enum": ["internal_csv", "regulation_text", "visual_analysis", "user_input", "llm_knowledge"]
-    },
-    "confidence": {
-      "type": "string",
-      "description": "Reliability: lookup_table = exact match in CSV, regulation_text = cited from official source, model_estimate = model inference, insufficient_data = not enough info",
-      "enum": ["lookup_table", "regulation_text", "model_estimate", "insufficient_data"]
-    },
-    "reasoning_summary": {
-      "type": "string",
-      "description": "Optional: brief explanation of the reasoning. Leave empty string if not applicable."
-    }
-  },
-  "required": ["source_type", "confidence"]
-}
-```
+### Definition of Done
 
-> Примечание: `reasoning_summary` — **optional по смыслу, required по схеме** (пустая строка допустима).
-> Это сделано намеренно: если поле optional — модель его пропустит. Пустая строка лучше чем отсутствие поля.
-> `confidence` — **enum из 4 значений**, не float. Float confidence — это сама по себе галлюцинация.
+Есть **демо-проход**, который можно показать:
+
+- фото Brand
+- продукт: дубовый стол
+- собранный паспорт
+- readiness score
+
+---
+
+## День 2 — real `VisionAgent`
+
+# Шаг 2.1 — `VisionAgent` real v1
+
+**Файл:** `agents/vision_agent.py`
+
+### Что сделать
+
+Сделать реальный агент без лишней сложности:
+
+1. `analyze_image()`
+2. `call_tool()`
+3. structured extraction
+
+### Чего НЕ делать сейчас
+
+- не добавлять отдельный предварительный global think
+- не делать adversarial validation
+- не пытаться решать regulatory reasoning через vision
+
+### Поля, которые должен возвращать агент
+
+- `category_candidate`
+- `materials_detected`
+- `visual_features`
+- `visible_labels_text`
+- `country_of_origin_visible`
+- `confidence_visual`
+- `evidence`
+
+### Definition of Done
+
+- на реальном фото возвращается структурированный словарь
+- mock `VisionAgent` можно удалить
+- pipeline использует реальную версию без изменения остальных шагов
+
+---
+
+# Шаг 2.2 — `PhotoProcessor`
+
+**Файл:** `src/processing/photo.py`
+
+### Что сделать
+
+Реализовать:
+
+- background removal
+- белый фон
+- 800x800 PNG
+
+### Definition of Done
+
+- `standardize_photo()` создаёт корректный PNG
+- файл можно класть в output package
+
+---
+
+# Шаг 2.3 — perception step integration
+
+**Файл:** `src/core/pipeline.py`
+
+### Что сделать
+
+Объединить:
+
+- `VisionAgent`
+- `standardize_photo()`
+- merge с user input
+
+### Режим выполнения
+
+Можно сделать параллельно через `asyncio.to_thread`, но только после того как одиночные вызовы уже работают.
+
+### Definition of Done
+
+- perception step стабилен
+- дальше в pipeline передаются уже нормализованные product facts
+
+---
+
+## День 3 — real `DPPGenerator`
+
+# Шаг 2.4 — schema-aware generation
+
+**Файл:** `src/core/dpp_generator.py`
+
+### Что сделать
+
+Довести генератор до реального состояния:
+
+- выбор нужной schema по category
+- заполнение `credentialSubject`
+- генерация JSON-LD wrapper
+- валидация результата
+- поддержка multimodal merged input
+
+### Что важно
+
+`DPPGenerator` должен быть **максимально детерминированным**.
+Свободного текста модели здесь должно быть меньше, чем структурированного заполнения.
+
+### Definition of Done
+
+- из merged product facts строится реальный `passport.json`
+- есть `validate()`
+- сгенерированный JSON можно сохранить и показать в UI
+
+---
+
+# Шаг 2.5 — offline JSON-LD / context loading
+
+**Файлы:**
+
+- `src/utils/jsonld_loader.py`
+- `contexts/`
+
+### Что сделать
+
+Довести офлайн-кэш и загрузку контекстов до рабочего состояния.
+
+### Definition of Done
+
+- проект не зависит от живого интернета для JSON-LD contexts
+- валидация не ломается из-за внешних URL
+
+---
+
+## День 4 — `DataAuditAgent` + cross-consistency
+
+# Шаг 3.1 — `DataAuditAgent` real
+
+**Файл:** `agents/data_audit_agent.py`
+
+### Что сделать
+
+Сделать его **детерминированным**.
+
+### Ответственность агента
+
+- readiness score
+- missing essential fields
+- missing recommended fields
+- warnings
+- inconsistencies
+
+### Не делать
+
+- не превращать его в reasoning-heavy LLM agent
+- не пытаться дублировать legal/regulatory reasoning
+
+### Definition of Done
+
+- audit работает только на структурах Python
+- score воспроизводим
+
+---
+
+# Шаг 3.2 — cross-agent consistency check
+
+**Место:**
+
+- либо внутри `DataAuditAgent`
+- либо helper в `src/core/pipeline.py`
+
+### Что проверять
+
+- `VisionAgent.category_candidate` vs `RegulatoryConsultant.espr_category`
+- `materials_detected` vs `passport_json.materials`
+- `country_of_origin_visible` vs declared origin
+- наличие обязательных полей по category
+
+### Режим
+
+`strict_mode=False` по умолчанию:
+
+- конфликт флагируется
+- pipeline не блокируется
+
+### Definition of Done
+
+- inconsistencies появляются в audit output
+- UI показывает эти флаги
+
+---
+
+## День 5 — `RegulatoryConsultant`
+
+# Шаг 3.3 — `RegulatoryConsultant` real
+
+**Файл:** `agents/regulatory_consultant.py`
+
+### Что сделать
+
+Это первый настоящий агент, который использует `run_verified_task()`.
+
+### Входы
+
+- merged product facts
+- candidate category
+- visible labels / certificates
+
+### Выходы
+
+- `espr_category`
+- `applicable_regulations`
+- `required_fields`
+- `missing_regulatory_inputs`
+- `evidence`
+
+### Definition of Done
+
+- агент даёт category + regulatory requirements
+- его результат уже участвует в audit
+
+---
+
+## День 6 — `LegalAgent`
+
+# Шаг 3.4 — `LegalAgent` real
+
+**Файл:** `agents/legal_agent.py`
+
+### Что сделать
+
+Тоже использовать `run_verified_task()`.
+
+### Выходы
+
+- `compliance_flags`
+- `missing_documents`
+- `legal_risks`
+- `reach_flags` / `rohs_flags` / `vat_or_trade_flags` если применимо
+- `evidence`
+
+### Definition of Done
+
+- legal result встраивается в `PipelineState`
+- audit учитывает legal risks
+
+---
+
+## День 7 — `LCASpecialist`
+
+# Шаг 3.5 — `LCASpecialist` real
+
+**Файл:** `agents/lca_specialist.py`
+
+### Что сделать
+
+Сделать через CSV lookup, а не через reasoning.
+
+### Источник
+
+- `data/gwp_coefficients.csv`
+
+### Выходы
+
+- `estimated_gwp_kg_co2e`
+- `coefficient_source`
+- `assumptions`
+- `confidence`
+
+### Definition of Done
+
+- для известных материалов возвращается воспроизводимый результат
+- нет зависимости от LLM там, где можно обойтись таблицей
+
+---
+
+## День 8 — `GS1Specialist` + QR
+
+# Шаг 3.6 — `GS1Specialist` real
+
+**Файл:** `agents/gs1_specialist.py`
+
+### Что сделать
+
+Добавить:
+
+- GTIN normalization
+- product identifier assembly
+- final public passport URL usage
+
+### Definition of Done
+
+- если GTIN передан, он включается в package
+- если GTIN нет, система не падает
+
+---
+
+# Шаг 3.7 — QR generation
+
+**Файл:** `src/processing/qr.py`
+
+### Что сделать
+
+Реализовать `generate_qr()`.
+
+### Жёсткое правило
+
+QR делается **только после** того, как есть стабильный `passport_url`.
+
+### Definition of Done
+
+- QR PNG генерируется
+- сканирование ведёт на `passport_url`
+
+---
+
+## День 9 — HTML/PDF + packaging
+
+# Шаг 3.8 — `GapReportGenerator`
+
+**Файл:** `src/core/gap_report.py`
+
+### Что сделать
+
+Сначала сделать минимальную рабочую версию:
+
+- template context
+- render Jinja2
+- HTML → PDF
+
+### Definition of Done
+
+- `gap_report.pdf` создаётся
+- PDF входит в package
+
+---
+
+# Шаг 4.1 — `FastAPI server`
+
+**Файл:** `src/server/passport_server.py`
+
+### Что сделать
+
+Не строить сложный background job server.
+Сделать сначала MVP:
+
+- serve local output files
+- basic routes for generated passports
+
+### Definition of Done
+
+- локальный `passport_url` открывается в браузере
+- JSON / HTML / QR доступны по URL
+
+---
+
+# Шаг 4.2 — `Gradio UI` polishing
+
+**Файл:** `src/ui/gradio_app.py`
+
+### Что сделать
+
+Довести UI до конкурсного состояния:
+
+- прогресс по шагам
+- preview outputs
+- download package
+- понятные ошибки
+
+### Definition of Done
+
+- UI годится для записи демо-видео
+
+---
+
+## День 10 (30.04) — AWS MVP + финальный буфер
+
+# Шаг 3.9 — AWS S3 Storage MVP
+
+**Файл:** `src/storage/aws_s3.py`
+
+### Что сделать
+
+Реализовать только то, что критично для печатного QR:
+
+- `save_package()`
+- `get_public_url()`
+- `file_exists()`
+- `.env.example` для AWS
+
+### Какой scope допустим до дедлайна
+
+**Да:**
+
+- загрузка package в S3
+- стабильный публичный URL
+- QR на этот URL
+- deploy instructions
+
+**Нет, если не останется буфера:**
+
+- полноценная AWS orchestration платформа
+- асинхронные job queues
+- autoscaling GPU inference layer
+- сложный multi-tenant backend
+
+### Definition of Done
+
+- можно выбрать `storage_mode="s3"`
+- package реально загружается в bucket
+- QR открывает облачный URL
+
+---
+
+# Шаг 4.3 — app.py final entrypoint
+
+**Файл:** `app.py`
+
+### Что сделать
+
+Одна понятная точка входа:
+
+- launch Gradio
+- optional FastAPI mount
+- env-based mode selection
+
+### Definition of Done
+
+- запуск по README понятен
+- локальная и S3-конфигурация не конфликтуют
+
+---
+
+# Шаг 4.4 — Финальный Brand test
+
+### Сценарий
+
+- фото продукта Brand
+- описание
+- генерация полного package
+- `passport.json`
+- HTML
+- PDF
+- QR
+- readiness score
+
+### Definition of Done
+
+Это можно показать судьям без ручных оправданий.
+
+---
+
+# Шаг 4.5 — Демо-видео
+
+### Что показать
+
+1. upload product photo
+2. generation flow
+3. resulting passport
+4. readiness / compliance view
+5. QR scan → open passport URL
+
+---
+
+# Шаг 5.x — После 30.04 / конкурсная упаковка
+
+## Шаг 5.1 — README
+
+- local setup
+- AWS setup
+- architecture diagram
+- how to add your own product data
+
+## Шаг 5.2 — Kaggle / contest writeup
+
+- problem
+- why Gemma
+- anti-hallucination design
+- schema-first DPP generation
+- cloud-ready QR workflow
+
+## Шаг 5.3 — Live demo
+
+Если останется время: HF Spaces / публичный demo endpoint
+
+## Шаг 5.4 — Media gallery
+
+cover + screenshots + QR scan flow
+
+## Шаг 5.5 — Submission checklist
+
+- README
+- demo video
+- reproducible setup
+- sample output package
+
+---
+
+# 3. AWS: что реально успеть
+
+## Реалистичная цель до 30.04
+
+Сделать **AWS storage deployment path**, а не “полный AWS inference platform”.
+
+### Значит:
+
+- inference может продолжать работать локально или на одной машине
+- outputs публикуются в S3
+- QR кодирует стабильный облачный URL
+- любой человек может поднять проект из репозитория, прописать свои AWS credentials и получить печатный QR workflow
+
+## Рекомендуемый AWS scope v1
+
+### Обязательно
+
+- `src/storage/aws_s3.py`
+- `HOSTING_URL`
+- bucket setup инструкции
+- IAM policy example
+- README section “Deploy with S3”
+
+### Желательно
+
+- CloudFront-ready URL support
+- `HOSTING_URL=https://your-domain-or-cloudfront.net`
+- `scripts/create_s3_bucket.sh` или `deploy/aws/README.md`
+
+### Необязательно до дедлайна
+
+- ECS/Fargate/EC2 automation
+- Terraform/CDK
+- async queue processing
+- managed auth system
+
+---
+
+# 4. Приоритеты, если начнёт гореть дедлайн
+
+Если времени мало, режь scope в таком порядке:
+
+## Нельзя вырезать
+
+- `PassportPipeline`
+- `VisionAgent`
+- `DPPGenerator`
+- `DataAuditAgent`
+- `QR`
+- `LocalStorage`
+- working Gradio demo
+
+## Можно упростить
+
+- `LegalAgent`
+- `LCASpecialist`
+- `GS1Specialist`
+- `GapReportGenerator`
+- AWS deployment automation
+
+## Можно отложить
+
+- FastAPI background tasks
+- сложный async server
+- production-grade cloud orchestration
+
+---
+
+# 5. Итоговое правило реализации
+
+## Правильный порядок
+
+- сначала **contracts + thin pipeline**
+- потом **mock vertical slice**
+- потом **real agents one by one**
+- потом **storage / QR / packaging**
+- потом **AWS publication layer**
+
+## Неправильный порядок
+
+- сначала “все агенты”
+- потом поздняя интеграция
+- потом попытка спасти всё через глобальный orchestrator
+
+---
+
+# 6. Минимальный must-have к 30.04
+
+К финалу у проекта должно быть:
+
+- рабочий `PassportPipeline`
+- реальный `VisionAgent`
+- реальный `DPPGenerator`
+- реальный `DataAuditAgent`
+- хотя бы базовый `RegulatoryConsultant`
+- `LocalStorage`
+- опционально `S3Storage`
+- `QR`
+- Gradio demo
+- один убедительный сценарий: **Brand → дубовый стол → готовый DPP package**
+
+Если всё это есть, проект уже выглядит как конкурсный продукт, а не как набор заготовок.

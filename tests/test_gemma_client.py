@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from templates.src.core.gemma_client import (
+from src.core.gemma_client import (
     GemmaClient,
     GemmaConnectionError,
     GemmaResponseError,
