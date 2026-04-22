@@ -59,6 +59,43 @@ GranularityLevel = Literal["item", "batch", "model"]
 HumanReviewStatus = Literal["not_reviewed", "reviewed", "approved", "rejected"]
 
 
+AgentName = Literal[
+    "VisionAgent",
+    "RegulatoryConsultant",
+    "LegalAgent",
+    "LCASpecialist",
+    "GS1Specialist",
+    "DataAuditAgent",
+]
+
+AGENT_NAME_VALUES = (
+    "VisionAgent",
+    "RegulatoryConsultant",
+    "LegalAgent",
+    "LCASpecialist",
+    "GS1Specialist",
+    "DataAuditAgent",
+)
+
+PRODUCT_GROUP_VALUES = (
+    "textiles",
+    "batteries",
+    "electrical_appliances",
+)
+
+SECTOR_PROFILE_NAME_VALUES = (
+    "textile_core_v1",
+    "battery_passport_annex_xiii_v1",
+    "electrical_appliance_espr_ready_v1",
+)
+
+CONFIDENCE_SOURCE_VALUES = (
+    "lookup_table",
+    "regulation_text",
+    "model_estimate",
+    "insufficient_data",
+)
+
 # ============================================================
 # Shared helper objects
 # ============================================================
