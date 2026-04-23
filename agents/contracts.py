@@ -350,9 +350,78 @@ class SectoralData(TypedDict):
     batteries: BatterySectorData | None
     electrical_appliances: ElectricalSectorData | None
 
+# ============================================================
+# Voluntary ESG slice
+# Optional internal layer for declared/provided environmental data.
+# v1 rule: no invented values, no proxy estimates.
+# ============================================================
 
+class CarbonFootprintData(TypedDict, total=False):
+    gwp_kg_co2e: float
+    scope: Literal["cradle_to_gate", "cradle_to_grave", "gate_to_gate", "other"]
+    methodology: str | None
+    data_source: str | None
+    confidence: float | None
+    verified_by: str | None
+    verification_date: str | None
+    notes: str | None
+
+
+class WaterConsumptionData(TypedDict, total=False):
+    liters_per_unit: float
+    scope: Literal["production", "full_lifecycle", "other"]
+    methodology: str | None
+    data_source: str | None
+    notes: str | None
+
+
+class FootprintData(TypedDict, total=False):
+    carbon_footprint: CarbonFootprintData
+    water_consumption: WaterConsumptionData
+
+
+class RecycledContentMaterialItem(TypedDict, total=False):
+    material: str
+    percentage: float
+    source_type: Literal["post_consumer", "pre_consumer", "unknown"]
+
+
+class RecycledContentData(TypedDict, total=False):
+    overall_percentage: float
+    by_material: list[RecycledContentMaterialItem]
+    notes: str | None
+
+
+class PackagingData(TypedDict, total=False):
+    type: str | None
+    material: str | None
+    recyclable: bool
+    recycled_content_percentage: float | None
+    plastic_free_packaging: bool
+
+
+class SupplierTransparencyItem(TypedDict, total=False):
+    tier: Literal["tier1", "tier2", "tier3", "other"]
+    name: str | None
+    country: str | None
+    role: str | None
+    audit_date: str | None
+
+
+class SupplyChainTransparencyData(TypedDict, total=False):
+    transparency_level: Literal["tier1", "tier2", "tier3", "farm", "unknown"]
+    suppliers: list[SupplierTransparencyItem]
+
+
+class VoluntaryEsgData(TypedDict, total=False):
+    footprint: FootprintData
+    recycled_content: RecycledContentData
+    packaging: PackagingData
+    supply_chain_transparency: SupplyChainTransparencyData
+    
 class DomainData(TypedDict):
     espr_core: EsprCoreData
+    voluntary_esg: VoluntaryEsgData | None
     sectoral: SectoralData
 
 

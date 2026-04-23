@@ -143,7 +143,7 @@ def validate_agent_specific_output(agent_name: str, payload: AgentPayload) -> li
 
     elif agent_name == "LCASpecialist":
         has_domain_lca_signal = _has_any_signal(
-            espr_core.get("voluntary_esg_hint"),
+            domain_data.get("voluntary_esg"),
             _get_selected_sectoral_block(sectoral),
         )
         has_supporting_signal = _has_any_signal(
