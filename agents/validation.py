@@ -3,14 +3,19 @@ from __future__ import annotations
 from typing import Any, cast
 
 from .contracts import (
+    ACCEPTABLE_EVIDENCE_VALUES,
+    ACTION_OWNER_VALUES,
     AGENT_NAME_VALUES,
     AgentPayload,
-    ProductGroup,
     CONFIDENCE_SOURCE_VALUES,
+    EVIDENCE_STATUS_VALUES,
     EXPECTED_ESPR_CATEGORY_BY_GROUP,
     EXPECTED_SECTOR_PROFILE_BY_GROUP,
     MAX_AGENT_SUMMARY_CHARS,
     PRODUCT_GROUP_VALUES,
+    ProductGroup,
+    READINESS_VERDICT_VALUES,
+    REASON_CODE_VALUES,
     SECTOR_PROFILE_NAME_VALUES,
 )
 
@@ -19,6 +24,12 @@ VALID_AGENT_NAMES = set(AGENT_NAME_VALUES)
 VALID_PRODUCT_GROUPS = set(PRODUCT_GROUP_VALUES)
 VALID_SECTOR_PROFILE_NAMES = set(SECTOR_PROFILE_NAME_VALUES)
 VALID_CONFIDENCE_SOURCES = set(CONFIDENCE_SOURCE_VALUES)
+
+VALID_READINESS_VERDICTS = set(READINESS_VERDICT_VALUES)
+VALID_EVIDENCE_STATUSES = set(EVIDENCE_STATUS_VALUES)
+VALID_ACCEPTABLE_EVIDENCE = set(ACCEPTABLE_EVIDENCE_VALUES)
+VALID_REASON_CODES = set(REASON_CODE_VALUES)
+VALID_ACTION_OWNERS = set(ACTION_OWNER_VALUES)
 
 
 def validate_common_agent_output(payload: AgentPayload) -> list[str]:
@@ -179,18 +190,50 @@ def validate_agent_specific_output(agent_name: str, payload: AgentPayload) -> li
             errors.append("GS1Specialist.advisory.agent_summary is required")
 
     elif agent_name == "DataAuditAgent":
-        if not isinstance(missing_fields, list) or len(missing_fields) == 0:
-            errors.append(
-                "DataAuditAgent.assessment.missing_fields must be a non-empty list"
-            )
+        readiness_verdict = assessment.get("readiness_verdict")
+        readiness_score = assessment.get("readiness_score")
+        is_publishable = assessment.get("is_publishable")
+        blocking_issues = assessment.get("blocking_issues")
+        contradictions = assessment.get("contradictions", [])
+
+        if not isinstance(missing_fields, list):
+            errors.append("DataAuditAgent.assessment.missing_fields must be a list")
+        else:
+            errors.extend(_validate_data_audit_missing_fields(missing_fields))
+
         if not isinstance(warnings, list):
             errors.append("DataAuditAgent.assessment.warnings must be a list")
+
+        if not isinstance(contradictions, list):
+            errors.append("DataAuditAgent.assessment.contradictions must be a list")
+
         if not isinstance(needs_human_review, bool):
             errors.append("DataAuditAgent.assessment.needs_human_review must be a bool")
-        if not isinstance(recommended_next_actions, list) or len(recommended_next_actions) == 0:
+
+        if readiness_verdict not in VALID_READINESS_VERDICTS:
             errors.append(
-                "DataAuditAgent.advisory.recommended_next_actions must be a non-empty list"
+                "DataAuditAgent.assessment.readiness_verdict is required and must be valid"
             )
+
+        if not isinstance(readiness_score, int) or not (0 <= readiness_score <= 100):
+            errors.append(
+                "DataAuditAgent.assessment.readiness_score must be an int in range 0..100"
+            )
+
+        if not isinstance(is_publishable, bool):
+            errors.append("DataAuditAgent.assessment.is_publishable must be a bool")
+
+        if not isinstance(blocking_issues, list):
+            errors.append("DataAuditAgent.assessment.blocking_issues must be a list")
+
+        if not isinstance(recommended_next_actions, list):
+            errors.append(
+                "DataAuditAgent.advisory.recommended_next_actions must be a list"
+            )
+
+        if not isinstance(where_to_get_data, list):
+            errors.append("DataAuditAgent.advisory.where_to_get_data must be a list")
+
         if not _is_non_empty_string(agent_summary):
             errors.append("DataAuditAgent.advisory.agent_summary is required")
 
@@ -308,6 +351,89 @@ def _validate_agent_summary(advisory: dict[str, Any]) -> list[str]:
 
     if "\n-" in summary or "\n•" in summary:
         errors.append("advisory.agent_summary must not contain inline bullet lists")
+
+    return errors
+
+
+def _validate_data_audit_missing_fields(missing_fields: list[Any]) -> list[str]:
+    errors: list[str] = []
+
+    for idx, item in enumerate(missing_fields):
+        prefix = f"DataAuditAgent.assessment.missing_fields[{idx}]"
+
+        if not isinstance(item, dict):
+            errors.append(f"{prefix} must be a dict")
+            continue
+
+        field = item.get("field")
+        gap_id = item.get("gap_id")
+        reason = item.get("reason")
+        reason_code = item.get("reason_code")
+        blocking = item.get("blocking")
+        source_agents = item.get("source_agents")
+        current_evidence_status = item.get("current_evidence_status")
+        closure_condition = item.get("closure_condition")
+        acceptable_evidence = item.get("acceptable_evidence")
+        why_it_matters = item.get("why_it_matters")
+        owner_hint = item.get("owner_hint")
+        where_to_get_data = item.get("where_to_get_data")
+
+        if not _is_non_empty_string(field):
+            errors.append(f"{prefix}.field is required and must be a non-empty string")
+
+        if not _is_non_empty_string(gap_id):
+            errors.append(f"{prefix}.gap_id is required and must be a non-empty string")
+
+        if not _is_non_empty_string(reason):
+            errors.append(f"{prefix}.reason is required and must be a non-empty string")
+
+        if reason_code not in VALID_REASON_CODES:
+            errors.append(f"{prefix}.reason_code must be a valid ReasonCode")
+
+        if not isinstance(blocking, bool):
+            errors.append(f"{prefix}.blocking must be a bool")
+
+        if (
+            not isinstance(source_agents, list)
+            or len(source_agents) == 0
+            or any(agent not in VALID_AGENT_NAMES for agent in source_agents)
+        ):
+            errors.append(
+                f"{prefix}.source_agents must be a non-empty list of valid agent names"
+            )
+
+        if current_evidence_status not in VALID_EVIDENCE_STATUSES:
+            errors.append(
+                f"{prefix}.current_evidence_status must be a valid EvidenceStatus"
+            )
+
+        if not _is_non_empty_string(closure_condition):
+            errors.append(
+                f"{prefix}.closure_condition is required and must be a non-empty string"
+            )
+
+        if (
+            not isinstance(acceptable_evidence, list)
+            or len(acceptable_evidence) == 0
+            or any(evidence not in VALID_ACCEPTABLE_EVIDENCE for evidence in acceptable_evidence)
+        ):
+            errors.append(
+                f"{prefix}.acceptable_evidence must be a non-empty list "
+                "of valid acceptable evidence values"
+            )
+
+        if not _is_non_empty_string(why_it_matters):
+            errors.append(
+                f"{prefix}.why_it_matters is required and must be a non-empty string"
+            )
+
+        if owner_hint not in VALID_ACTION_OWNERS:
+            errors.append(f"{prefix}.owner_hint must be a valid ActionOwner")
+
+        if not _is_non_empty_string(where_to_get_data):
+            errors.append(
+                f"{prefix}.where_to_get_data is required and must be a non-empty string"
+            )
 
     return errors
 

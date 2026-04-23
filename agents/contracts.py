@@ -58,6 +58,38 @@ GranularityLevel = Literal["item", "batch", "model"]
 
 HumanReviewStatus = Literal["not_reviewed", "reviewed", "approved", "rejected"]
 
+ReadinessVerdict = Literal[
+    "ready",
+    "ready_with_gaps",
+    "not_ready",
+    "blocked_by_conflicts",
+]
+
+EvidenceStatus = Literal[
+    "absent",
+    "photo_only",
+    "claim_only",
+    "document_present_unverified",
+    "verified_documented",
+]
+
+AcceptableEvidence = Literal[
+    "photo",
+    "document",
+    "manual_entry",
+    "supplier_confirmation",
+    "system_export",
+]
+
+ReasonCode = Literal[
+    "missing",
+    "unverified",
+    "inconsistent",
+    "document_absent",
+    "human_review_required",
+    "not_accessible",
+    "photo_insufficient",
+]
 
 AgentName = Literal[
     "VisionAgent",
@@ -95,7 +127,47 @@ CONFIDENCE_SOURCE_VALUES = (
     "model_estimate",
     "insufficient_data",
 )
+READINESS_VERDICT_VALUES = (
+    "ready",
+    "ready_with_gaps",
+    "not_ready",
+    "blocked_by_conflicts",
+)
 
+EVIDENCE_STATUS_VALUES = (
+    "absent",
+    "photo_only",
+    "claim_only",
+    "document_present_unverified",
+    "verified_documented",
+)
+
+ACCEPTABLE_EVIDENCE_VALUES = (
+    "photo",
+    "document",
+    "manual_entry",
+    "supplier_confirmation",
+    "system_export",
+)
+
+REASON_CODE_VALUES = (
+    "missing",
+    "unverified",
+    "inconsistent",
+    "document_absent",
+    "human_review_required",
+    "not_accessible",
+    "photo_insufficient",
+)
+
+ACTION_OWNER_VALUES = (
+    "manufacturer",
+    "importer",
+    "brand_owner",
+    "supplier",
+    "internal_compliance",
+    "unknown",
+)
 # ============================================================
 # Shared helper objects
 # ============================================================
@@ -107,6 +179,7 @@ class SectorProfile(TypedDict):
 
 
 class MissingField(TypedDict, total=False):
+    # `field` must store a canonical machine-readable field path.
     field: str
     severity: MissingSeverity
     reason: str
@@ -116,6 +189,17 @@ class MissingField(TypedDict, total=False):
     can_be_inferred: bool
     requires_supplier_confirmation: bool
     source_domain: SourceDomain
+
+    gap_id: str
+    blocking: bool
+    reason_code: ReasonCode
+    source_agents: list[AgentName]
+    current_evidence_status: EvidenceStatus
+    closure_condition: str
+    acceptable_evidence: list[AcceptableEvidence]
+    why_it_matters: str
+    owner_hint: ActionOwner
+    where_to_get_data: str
 
 
 class BusinessRisk(TypedDict):
@@ -438,6 +522,12 @@ class Assessment(TypedDict, total=False):
     contradictions: list[str]
     needs_human_review: bool
 
+    # rule-based readiness indicator in range 0..100;
+    # not an LLM confidence score
+    readiness_verdict: ReadinessVerdict
+    readiness_score: int
+    is_publishable: bool
+    blocking_issues: list[str]
 
 # ============================================================
 # Advisory
