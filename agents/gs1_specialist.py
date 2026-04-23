@@ -1,238 +1,681 @@
-"""
-agents/gs1_specialist.py — GS1 Specialist Agent
+from __future__ import annotations
 
-Handles GS1 identifiers for Digital Product Passports:
-  - GTIN-14 barcode validation (checksum verification)
-  - DID:web generation from UUID
-  - GS1 Digital Link URL construction
-
-GS1 standards:
-  - GTIN: Global Trade Item Number (14 digits, mod-10 checksum)
-  - DID:web: Decentralized Identifier using web method
-  - GS1 Digital Link: https://www.gs1.org/standards/gs1-digital-link
-
-Usage:
-    from agents.gs1_specialist import GS1Specialist
-
-    gs1 = GS1Specialist(gemma_client)
-
-    # Validate GTIN
-    assert gs1.validate_gtin("05901234123457") == True
-    assert gs1.validate_gtin("05901234123458") == False
-
-    # Generate DID
-    did = gs1.generate_did_web("3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b")
-    # "did:web:passportai.example.com:passports:3f8a1b2c-..."
-
-    # Build GS1 Digital Link
-    url = gs1.build_gs1_digital_link("05901234123457", "https://passportai.example.com")
-    # "https://passportai.example.com/01/05901234123457"
-"""
-
-import os
-from pathlib import Path
 from typing import Any
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
+from .contracts import AgentPayload
 
 
 class GS1Specialist(BaseAgent):
-    """GS1 identifier management agent.
+    """
+    GS1Specialist owns:
+    - identifier normalization/readiness
+    - identifier plausibility checks
+    - data-carrier readiness
+    - resolver URL readiness
+    - QR readiness (not final QR artifact)
+    - identifier/data-carrier missing fields
+    - print-readiness advice
 
-    Validates GTINs, generates DID:web identifiers, and builds
-    GS1 Digital Link URLs for product passports.
+    GS1Specialist does NOT own:
+    - final QR image generation
+    - cloud upload/public hosting
+    - final resolver publication
+    - product classification
+    - legal/compliance truth
+    - LCA/ESG values
 
-    Does NOT require Gemma 4 for core functions (validate_gtin, generate_did_web,
-    build_gs1_digital_link are pure algorithmic — no LLM needed).
-
-    Attributes:
-        base_did_domain: Domain for DID:web generation.
-        base_url: Base URL for GS1 Digital Links.
+    Important v1 limitation:
+    - This agent does NOT verify GS1 authenticity or external issuance.
+    - It only performs lightweight syntactic plausibility checks.
     """
 
-    def __init__(
-        self,
-        client: Any,  # Optional — GS1 functions don't require LLM
-        prompts_dir: Path | None = None,
-        base_did_domain: str | None = None,
-        base_url: str | None = None,
-    ) -> None:
-        """Initialize GS1Specialist.
-
-        Args:
-            client: GemmaClient (optional for this agent).
-            prompts_dir: Path to prompts directory.
-            base_did_domain: Domain for DID:web URLs. Defaults to
-                             HOSTING_URL domain or "passportai.example.com".
-            base_url: Base URL for GS1 Digital Links. Defaults to HOSTING_URL.
-        """
-        super().__init__(client, prompts_dir, name="GS1Specialist")
-        hosting_url = os.getenv("HOSTING_URL", "http://localhost:8000")
-        self.base_did_domain = base_did_domain or "passportai.example.com"
-        self.base_url = base_url or hosting_url.rstrip("/")
+    IS_MOCK = True
 
     def run(
         self,
-        passport_json: dict | None = None,
-        gtin: str | None = None,
-        passport_id: str | None = None,
-        **kwargs,
-    ) -> dict:
-        """Generate product ID and passport URL for the DPP.
+        product_group: str = "textiles",
+        persistent_identifier_value: str | None = None,
+        operator_identifier_value: str | None = None,
+        facility_identifier_value: str | None = None,
+        public_resolver_url: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        try:
+            if product_group not in {
+                "textiles",
+                "batteries",
+                "electrical_appliances",
+            }:
+                raise ValueError(f"Unsupported product_group: {product_group}")
 
-        Args:
-            passport_json: The passport draft (for enrichment).
-            gtin: Optional GTIN-14 barcode string.
-            passport_id: UUID of the passport (required).
+            payload = self._build_payload(
+                product_group=product_group,
+                persistent_identifier_value=persistent_identifier_value,
+                operator_identifier_value=operator_identifier_value,
+                facility_identifier_value=facility_identifier_value,
+                public_resolver_url=public_resolver_url,
+            )
+            return self._format_success(payload)
+        except Exception as exc:
+            return self._format_error(exc)
 
-        Returns:
-            Dictionary with:
-                - product_id (str): DID:web or GS1 identifier
-                - passport_url (str): Public URL for the passport
-                - gs1_digital_link (str | None): GS1 Digital Link if GTIN provided
-                - gtin_valid (bool | None): GTIN validation result
-                - did_web (str): DID:web identifier
+    def _build_payload(
+        self,
+        product_group: str,
+        persistent_identifier_value: str | None,
+        operator_identifier_value: str | None,
+        facility_identifier_value: str | None,
+        public_resolver_url: str | None,
+    ) -> AgentPayload:
+        identifier_value = self._clean(persistent_identifier_value)
+        operator_value = self._clean(operator_identifier_value)
+        facility_value = self._clean(facility_identifier_value)
+        resolver_url = self._clean(public_resolver_url)
 
-        Example:
-            >>> gs1 = GS1Specialist(None)
-            >>> result = gs1.run(passport_id="abc-123", gtin="05901234123457")
-            >>> print(result["passport_url"])  # "http://localhost:8000/abc-123"
-        """
-        if not passport_id:
-            raise ValueError("passport_id is required for GS1Specialist.run()")
+        has_public_url = resolver_url is not None
+        is_numeric_identifier = self._is_numeric_identifier(identifier_value)
+        is_gs1_length_candidate = self._is_gs1_length_candidate(identifier_value)
 
-        did_web = self.generate_did_web(passport_id)
-        passport_url = f"{self.base_url}/{passport_id}"
-
-        result = {
-            "product_id": did_web,
-            "passport_url": passport_url,
-            "did_web": did_web,
-            "gs1_digital_link": None,
-            "gtin_valid": None,
+        return {
+            "domain_data": {
+                "espr_core": {
+                    "identifiers_hint": {
+                        "persistent_unique_product_identifier": {
+                            "value": identifier_value,
+                            "scheme": None,
+                            "format": "numeric" if is_numeric_identifier else None,
+                            "issuing_body": None,
+                            "check_digit_verified": None,
+                        },
+                        "unique_operator_identifier": {
+                            "value": operator_value,
+                            "scheme": None,
+                            "issuing_body": None,
+                        },
+                        "unique_facility_identifier": {
+                            "value": facility_value,
+                            "scheme": None,
+                            "issuing_body": None,
+                        },
+                    },
+                    "data_carrier_hint": {
+                        "type": "QR",
+                        "carrier_value": resolver_url if has_public_url else None,
+                        "resolver_url": resolver_url if has_public_url else None,
+                        "physical_placement": "on_packaging",
+                        "standard": "GS1_Digital_Link",
+                        "is_persistent": has_public_url,
+                        "qr_payload": resolver_url if has_public_url else None,
+                        "digital_link_url": resolver_url if has_public_url else None,
+                        "status": (
+                            "ready_for_render"
+                            if has_public_url
+                            else "pending_public_url"
+                        ),
+                    },
+                },
+                "voluntary_esg": None,
+                "sectoral": self._build_sectoral_passthrough(product_group),
+            },
+            "assessment": {
+                "confidence_source": "insufficient_data",
+                "confidence_score": None,
+                "missing_fields": self._build_missing_fields(
+                    identifier_value=identifier_value,
+                    operator_value=operator_value,
+                    facility_value=facility_value,
+                    has_public_url=has_public_url,
+                ),
+                "warnings": self._build_warnings(
+                    identifier_value=identifier_value,
+                    is_numeric_identifier=is_numeric_identifier,
+                    is_gs1_length_candidate=is_gs1_length_candidate,
+                    has_public_url=has_public_url,
+                ),
+                "assumptions": [
+                    (
+                        "GS1/data-carrier review in v1 performs only syntactic "
+                        "plausibility checks and does not prove external GS1 "
+                        "authenticity or ownership."
+                    ),
+                    (
+                        "Final QR artifact is generated later in the packaging "
+                        "step after a stable public URL is available."
+                    ),
+                ],
+                "contradictions": self._build_contradictions(
+                    identifier_value=identifier_value,
+                    is_numeric_identifier=is_numeric_identifier,
+                    is_gs1_length_candidate=is_gs1_length_candidate,
+                    has_public_url=has_public_url,
+                ),
+                "needs_human_review": True,
+            },
+            "advisory": {
+                "agent_summary": self._build_summary(
+                    identifier_value=identifier_value,
+                    operator_value=operator_value,
+                    has_public_url=has_public_url,
+                    is_numeric_identifier=is_numeric_identifier,
+                    is_gs1_length_candidate=is_gs1_length_candidate,
+                ),
+                "business_risks": self._build_business_risks(
+                    identifier_value=identifier_value,
+                    has_public_url=has_public_url,
+                    is_gs1_length_candidate=is_gs1_length_candidate,
+                ),
+                "recommended_next_actions": self._build_next_actions(
+                    identifier_value=identifier_value,
+                    operator_value=operator_value,
+                    facility_value=facility_value,
+                    has_public_url=has_public_url,
+                    is_gs1_length_candidate=is_gs1_length_candidate,
+                ),
+                "supplier_requests": self._build_supplier_requests(
+                    identifier_value=identifier_value,
+                    operator_value=operator_value,
+                ),
+                "where_to_get_data": self._build_where_to_get_data(
+                    has_public_url=has_public_url
+                ),
+                "next_batch_improvements": [
+                    (
+                        "Make persistent identifier assignment and stable public "
+                        "resolver URL part of the release checklist before print "
+                        "production."
+                    ),
+                    (
+                        "Treat identifier authenticity as a separate verification "
+                        "step from identifier formatting."
+                    ),
+                ],
+            },
         }
 
-        if gtin:
-            is_valid = self.validate_gtin(gtin)
-            result["gtin_valid"] = is_valid
-            if is_valid:
-                result["gs1_digital_link"] = self.build_gs1_digital_link(gtin, self.base_url)
-                result["product_id"] = self.build_gs1_digital_link(gtin, self.base_url)
+    def _build_sectoral_passthrough(
+        self,
+        product_group: str,
+    ) -> dict[str, dict[str, Any] | None]:
+        # Validator-compatibility passthrough:
+        # GS1Specialist does not own sectoral content, but echoes the selected
+        # sector so the current validator can keep exactly-one-sectoral-block
+        # semantics.
+        return {
+            "textiles": {} if product_group == "textiles" else None,
+            "batteries": {} if product_group == "batteries" else None,
+            "electrical_appliances": (
+                {} if product_group == "electrical_appliances" else None
+            ),
+        }
 
-        return result
+    def _build_missing_fields(
+        self,
+        identifier_value: str | None,
+        operator_value: str | None,
+        facility_value: str | None,
+        has_public_url: bool,
+    ) -> list[dict[str, Any]]:
+        missing: list[dict[str, Any]] = []
 
-    def validate_gtin(self, gtin: str) -> bool:
-        """Validate a GS1 GTIN-14 barcode using the mod-10 checksum algorithm.
+        if not identifier_value:
+            missing.append(
+                {
+                    "field": (
+                        "dpp.regulatedCore.identifiers."
+                        "persistentUniqueProductIdentifier.value"
+                    ),
+                    "severity": "required",
+                    "reason": "No persistent product identifier has been provided.",
+                    "action": (
+                        "Assign or provide a persistent product identifier "
+                        "from product master data."
+                    ),
+                    "regulatory_basis": None,
+                    "can_be_inferred": False,
+                    "requires_supplier_confirmation": False,
+                    "source_domain": "gs1",
+                }
+            )
+            missing.append(
+                {
+                    "field": (
+                        "dpp.regulatedCore.identifiers."
+                        "persistentUniqueProductIdentifier.scheme"
+                    ),
+                    "severity": "required",
+                    "reason": (
+                        "Identifier scheme cannot be finalized until a "
+                        "persistent product identifier exists."
+                    ),
+                    "action": (
+                        "Choose the identifier scheme used in product master data."
+                    ),
+                    "regulatory_basis": None,
+                    "can_be_inferred": False,
+                    "requires_supplier_confirmation": False,
+                    "source_domain": "gs1",
+                }
+            )
 
-        The GS1 mod-10 checksum algorithm:
-          1. Remove all non-digit characters
-          2. The checksum digit is the last digit
-          3. Multiply alternating digits by 3 and 1 (starting from right, excluding check digit)
-          4. Sum all products
-          5. Check digit = (10 - (sum % 10)) % 10
+        if not operator_value:
+            missing.append(
+                {
+                    "field": (
+                        "dpp.regulatedCore.identifiers."
+                        "uniqueOperatorIdentifier.value"
+                    ),
+                    "severity": "recommended",
+                    "reason": (
+                        "No operator identifier is available for the "
+                        "responsible economic operator."
+                    ),
+                    "action": (
+                        "Provide GLN, EORI, VAT, LEI, or another operator "
+                        "identifier from master data."
+                    ),
+                    "regulatory_basis": None,
+                    "can_be_inferred": False,
+                    "requires_supplier_confirmation": False,
+                    "source_domain": "gs1",
+                }
+            )
 
-        Accepts GTIN-8, GTIN-12, GTIN-13, GTIN-14 (pads shorter GTINs to 14 digits).
+        if not facility_value:
+            missing.append(
+                {
+                    "field": (
+                        "dpp.regulatedCore.identifiers."
+                        "uniqueFacilityIdentifier.value"
+                    ),
+                    "severity": "optional",
+                    "reason": "No facility identifier is currently available.",
+                    "action": (
+                        "Add a facility identifier if plant-level traceability "
+                        "is needed."
+                    ),
+                    "regulatory_basis": None,
+                    "can_be_inferred": False,
+                    "requires_supplier_confirmation": False,
+                    "source_domain": "gs1",
+                }
+            )
 
-        Args:
-            gtin: GTIN string (8, 12, 13, or 14 digits). Non-digit chars are stripped.
+        if not has_public_url:
+            missing.extend(
+                [
+                    {
+                        "field": "dpp.regulatedCore.dataCarrier.carrierValue",
+                        "severity": "required",
+                        "reason": (
+                            "Carrier value cannot be finalized until a stable "
+                            "public resolver URL exists."
+                        ),
+                        "action": (
+                            "Publish the passport endpoint or cloud-hosted "
+                            "artifact and then finalize the QR payload."
+                        ),
+                        "regulatory_basis": None,
+                        "can_be_inferred": False,
+                        "requires_supplier_confirmation": False,
+                        "source_domain": "gs1",
+                    },
+                    {
+                        "field": "dpp.regulatedCore.dataCarrier.resolverUrl",
+                        "severity": "required",
+                        "reason": "No stable public resolver URL is available yet.",
+                        "action": (
+                            "Upload the final passport/package to a stable "
+                            "public location and assign the resolver URL."
+                        ),
+                        "regulatory_basis": None,
+                        "can_be_inferred": False,
+                        "requires_supplier_confirmation": False,
+                        "source_domain": "gs1",
+                    },
+                    {
+                        "field": "dpp.regulatedCore.dataCarrier.isPersistent",
+                        "severity": "recommended",
+                        "reason": (
+                            "Persistence cannot be claimed until the public "
+                            "URL strategy is finalized."
+                        ),
+                        "action": (
+                            "Use a stable long-lived URL before sending the QR "
+                            "to print production."
+                        ),
+                        "regulatory_basis": None,
+                        "can_be_inferred": False,
+                        "requires_supplier_confirmation": False,
+                        "source_domain": "gs1",
+                    },
+                ]
+            )
 
-        Returns:
-            True if the checksum is valid, False otherwise.
+        return missing
 
-        Example:
-            >>> gs1 = GS1Specialist(None)
-            >>> assert gs1.validate_gtin("05901234123457") == True
-            >>> assert gs1.validate_gtin("05901234123458") == False
-            >>> assert gs1.validate_gtin("05901234123457") == True  # GTIN-14
-        """
-        # Strip non-digit characters
-        digits = "".join(c for c in gtin if c.isdigit())
+    def _build_warnings(
+        self,
+        identifier_value: str | None,
+        is_numeric_identifier: bool,
+        is_gs1_length_candidate: bool,
+        has_public_url: bool,
+    ) -> list[str]:
+        warnings: list[str] = []
 
-        # Valid GTIN lengths: 8, 12, 13, 14
-        if len(digits) not in (8, 12, 13, 14):
+        if not identifier_value:
+            warnings.append(
+                "No persistent product identifier is available; the "
+                "QR/data-carrier layer cannot be finalized."
+            )
+        else:
+            warnings.append(
+                "Identifier review in v1 is only syntactic. Authenticity, "
+                "ownership, and external GS1 issuance are not verified."
+            )
+
+        if is_numeric_identifier and is_gs1_length_candidate:
+            warnings.append(
+                "Identifier length is compatible with common GS1-family "
+                "numeric keys, but check digit and registry authenticity "
+                "are not verified."
+            )
+        elif is_numeric_identifier and not is_gs1_length_candidate:
+            warnings.append(
+                "Identifier is numeric but does not match common GS1-family "
+                "lengths (8, 12, 13, 14)."
+            )
+        elif not is_numeric_identifier:
+            warnings.append(
+                "Identifier is non-numeric, so GS1-family numeric plausibility "
+                "cannot be assessed."
+            )
+
+        if not has_public_url:
+            warnings.append(
+                "QR is not print-ready until a stable public resolver URL is "
+                "assigned in the packaging/storage step."
+            )
+
+        return warnings
+
+    def _build_contradictions(
+        self,
+        identifier_value: str | None,
+        is_numeric_identifier: bool,
+        is_gs1_length_candidate: bool,
+        has_public_url: bool,
+    ) -> list[str]:
+        contradictions: list[str] = []
+
+        if identifier_value and not has_public_url:
+            contradictions.append(
+                "A product identifier may be available, but no stable public "
+                "resolver URL exists yet for final QR publication."
+            )
+
+        if identifier_value and is_numeric_identifier and not is_gs1_length_candidate:
+            contradictions.append(
+                "Identifier is present but does not match common GS1-family "
+                "numeric lengths."
+            )
+
+        return contradictions
+
+    def _build_summary(
+        self,
+        identifier_value: str | None,
+        operator_value: str | None,
+        has_public_url: bool,
+        is_numeric_identifier: bool,
+        is_gs1_length_candidate: bool,
+    ) -> str:
+        if not identifier_value:
+            return (
+                "GS1/data-carrier layer is not ready because no persistent "
+                "product identifier is available. A final QR cannot be "
+                "produced until an identifier and stable public resolver URL exist."
+            )
+
+        if not has_public_url:
+            if is_numeric_identifier and is_gs1_length_candidate:
+                return (
+                    "A syntactically plausible numeric identifier is available, "
+                    "but it remains source-unverified and QR publication is "
+                    "still pending because no stable public resolver URL is assigned."
+                )
+            return (
+                "An identifier is available, but it remains source-unverified "
+                "and QR publication is still pending because no stable public "
+                "resolver URL is assigned."
+            )
+
+        if not operator_value:
+            return (
+                "Identifier and resolver URL are partially ready, but the "
+                "identifier remains source-unverified and operator "
+                "identification is incomplete for stronger traceability."
+            )
+
+        return (
+            "Identifier and data-carrier layer appear operationally ready for "
+            "final QR rendering, but identifier authenticity remains "
+            "source-unverified in v1."
+        )
+
+    def _build_business_risks(
+        self,
+        identifier_value: str | None,
+        has_public_url: bool,
+        is_gs1_length_candidate: bool,
+    ) -> list[dict[str, Any]]:
+        risks: list[dict[str, Any]] = []
+
+        if not identifier_value:
+            risks.append(
+                {
+                    "title": "No persistent identifier assigned",
+                    "severity": "high",
+                    "why_it_matters": (
+                        "Without a stable identifier, traceability and durable "
+                        "passport linking are weakened from the start."
+                    ),
+                }
+            )
+
+        if identifier_value and not is_gs1_length_candidate:
+            risks.append(
+                {
+                    "title": "Identifier plausibility weak",
+                    "severity": "medium",
+                    "why_it_matters": (
+                        "An identifier with unusual format or length may block "
+                        "later registry or master-data integration."
+                    ),
+                }
+            )
+
+        if identifier_value and not has_public_url:
+            risks.append(
+                {
+                    "title": "QR not print-ready",
+                    "severity": "medium",
+                    "why_it_matters": (
+                        "Printing a QR before the final public resolver URL "
+                        "exists can create broken or short-lived links on "
+                        "physical goods."
+                    ),
+                }
+            )
+
+        return risks
+
+    def _build_next_actions(
+        self,
+        identifier_value: str | None,
+        operator_value: str | None,
+        facility_value: str | None,
+        has_public_url: bool,
+        is_gs1_length_candidate: bool,
+    ) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+
+        if not identifier_value:
+            actions.append(
+                {
+                    "priority": "now",
+                    "action": (
+                        "Assign or confirm a persistent product identifier "
+                        "from master data."
+                    ),
+                    "owner": "internal_compliance",
+                }
+            )
+        elif not is_gs1_length_candidate:
+            actions.append(
+                {
+                    "priority": "now",
+                    "action": (
+                        "Re-check the identifier format and confirm the exact "
+                        "product code in ERP or barcode records."
+                    ),
+                    "owner": "brand_owner",
+                }
+            )
+
+        if not operator_value:
+            actions.append(
+                {
+                    "priority": "soon",
+                    "action": (
+                        "Add a unique operator identifier such as GLN, EORI, "
+                        "VAT, or LEI."
+                    ),
+                    "owner": "brand_owner",
+                }
+            )
+
+        if not facility_value:
+            actions.append(
+                {
+                    "priority": "later",
+                    "action": (
+                        "Add a facility identifier if plant-level traceability "
+                        "is needed."
+                    ),
+                    "owner": "brand_owner",
+                }
+            )
+
+        if not has_public_url:
+            actions.append(
+                {
+                    "priority": "now",
+                    "action": (
+                        "Publish the final passport/package to a stable public "
+                        "URL before QR rendering."
+                    ),
+                    "owner": "internal_compliance",
+                }
+            )
+
+        if identifier_value:
+            actions.append(
+                {
+                    "priority": "soon",
+                    "action": (
+                        "Verify identifier authenticity and ownership against "
+                        "authoritative master data or external registry sources."
+                    ),
+                    "owner": "internal_compliance",
+                }
+            )
+
+        return actions
+
+    def _build_supplier_requests(
+        self,
+        identifier_value: str | None,
+        operator_value: str | None,
+    ) -> list[dict[str, Any]]:
+        requests: list[dict[str, Any]] = []
+
+        if not identifier_value:
+            requests.append(
+                {
+                    "request": (
+                        "Provide the product identifier used in master data "
+                        "or barcode records."
+                    ),
+                    "why_needed": (
+                        "Needed to build the persistent product identifier layer."
+                    ),
+                    "document_type": "product_master_data_identifier",
+                }
+            )
+
+        if not operator_value:
+            requests.append(
+                {
+                    "request": "Provide the responsible operator identifier.",
+                    "why_needed": (
+                        "Needed to strengthen operator-level traceability in "
+                        "the passport."
+                    ),
+                    "document_type": "operator_master_data",
+                }
+            )
+
+        return requests
+
+    def _build_where_to_get_data(self, has_public_url: bool) -> list[dict[str, Any]]:
+        items = [
+            {
+                "missing_topic": "Persistent product identifier",
+                "source": "ERP / barcode registry / product master data",
+                "how_to_obtain": (
+                    "Check internal product master data or barcode assignment "
+                    "records for the product code in use."
+                ),
+            },
+            {
+                "missing_topic": "Operator and facility identifiers",
+                "source": "company master data / compliance records / GS1 account",
+                "how_to_obtain": (
+                    "Retrieve operator and facility identifiers from legal "
+                    "entity or site master data."
+                ),
+            },
+        ]
+
+        if not has_public_url:
+            items.append(
+                {
+                    "missing_topic": "Stable public resolver URL",
+                    "source": (
+                        "cloud hosting / public artifact URL / passport endpoint"
+                    ),
+                    "how_to_obtain": (
+                        "Publish the final passport or package to a stable "
+                        "public location during the packaging step."
+                    ),
+                }
+            )
+
+        return items
+
+    def _clean(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+    def _is_numeric_identifier(self, identifier_value: str | None) -> bool:
+        return bool(identifier_value) and identifier_value.isdigit()
+
+    def _is_gs1_length_candidate(self, identifier_value: str | None) -> bool:
+        if not identifier_value or not identifier_value.isdigit():
             return False
 
-        # Pad to 14 digits for uniform processing
-        digits = digits.zfill(14)
-
-        # GS1 mod-10 checksum (Luhn variant)
-        # Process digits from right to left, excluding check digit (last)
-        check_digit = int(digits[-1])
-        total = 0
-        for i, digit in enumerate(reversed(digits[:-1])):
-            # Multiply by 3 if position is even (0-indexed from right), else 1
-            multiplier = 3 if i % 2 == 0 else 1
-            total += int(digit) * multiplier
-
-        calculated_check = (10 - (total % 10)) % 10
-        return calculated_check == check_digit
-
-    def generate_did_web(self, passport_uuid: str) -> str:
-        """Generate a DID:web identifier for a passport.
-
-        Format: did:web:{domain}:passports:{uuid}
-
-        Args:
-            passport_uuid: UUID string for the passport.
-
-        Returns:
-            DID:web identifier string.
-
-        Example:
-            >>> gs1 = GS1Specialist(None)
-            >>> did = gs1.generate_did_web("3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b")
-            >>> print(did)  # "did:web:passportai.example.com:passports:3f8a1b2c-..."
-        """
-        return f"did:web:{self.base_did_domain}:passports:{passport_uuid}"
-
-    def build_gs1_digital_link(self, gtin: str, base_url: str) -> str:
-        """Build a GS1 Digital Link URL for a GTIN.
-
-        GS1 Digital Link format: {base_url}/01/{gtin14}
-
-        The Application Identifier (AI) 01 identifies the GTIN.
-        GTIN is zero-padded to 14 digits.
-
-        Args:
-            gtin: GTIN string (will be zero-padded to 14 digits).
-            base_url: Base URL for the digital link resolver.
-
-        Returns:
-            GS1 Digital Link URL string.
-
-        Reference:
-            https://www.gs1.org/standards/gs1-digital-link
-
-        Example:
-            >>> gs1 = GS1Specialist(None)
-            >>> url = gs1.build_gs1_digital_link("5901234123457", "https://example.com")
-            >>> print(url)  # "https://example.com/01/05901234123457"
-        """
-        digits = "".join(c for c in gtin if c.isdigit())
-        gtin14 = digits.zfill(14)
-        return f"{base_url.rstrip('/')}/01/{gtin14}"
-
-
-if __name__ == "__main__":
-    gs1 = GS1Specialist(None)
-
-    # Test GTIN validation
-    valid_gtin = "05901234123457"
-    invalid_gtin = "05901234123458"
-
-    print(f"GTIN {valid_gtin}: {gs1.validate_gtin(valid_gtin)}")   # True
-    print(f"GTIN {invalid_gtin}: {gs1.validate_gtin(invalid_gtin)}")  # False
-
-    # Test DID generation
-    test_uuid = "3f8a1b2c-e4d5-4f6a-b789-0c1d2e3f4a5b"
-    did = gs1.generate_did_web(test_uuid)
-    print(f"DID:web: {did}")
-
-    # Test GS1 Digital Link
-    link = gs1.build_gs1_digital_link(valid_gtin, "https://passportai.example.com")
-    print(f"GS1 Digital Link: {link}")
-
-    # Assert correctness
-    assert gs1.validate_gtin(valid_gtin) is True, "GTIN should be valid"
-    assert gs1.validate_gtin(invalid_gtin) is False, "GTIN should be invalid"
-    print("\nAll GS1 tests passed!")
+        return len(identifier_value) in {8, 12, 13, 14}
