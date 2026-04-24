@@ -27,6 +27,7 @@ _FIELD_PRIORITY_HINTS = (
     "sector_profile",
     "espr_category",
 )
+
 _EVIDENCE_STATUS_RANK = {
     "absent": 1,
     "claim_only": 2,
@@ -34,17 +35,6 @@ _EVIDENCE_STATUS_RANK = {
     "document_present_unverified": 4,
     "verified_documented": 5,
 }
-
-def _merge_evidence_status(self, left: Any, right: Any) -> str:
-    left_value = left if left in _EVIDENCE_STATUS_RANK else "absent"
-    right_value = right if right in _EVIDENCE_STATUS_RANK else "absent"
-
-    return (
-        left_value
-        if _EVIDENCE_STATUS_RANK[left_value] >= _EVIDENCE_STATUS_RANK[right_value]
-        else right_value
-    )
-
 class DataAuditAgent(BaseAgent):
     """
     Cross-agent evidence auditor and passport readiness synthesizer.
@@ -1120,3 +1110,13 @@ class DataAuditAgent(BaseAgent):
             stripped = value.strip()
             return stripped or None
         return None
+    
+    def _merge_evidence_status(self, left: Any, right: Any) -> str:
+        left_value = left if left in _EVIDENCE_STATUS_RANK else "absent"
+        right_value = right if right in _EVIDENCE_STATUS_RANK else "absent"
+
+        return (
+            left_value
+            if _EVIDENCE_STATUS_RANK[left_value] >= _EVIDENCE_STATUS_RANK[right_value]
+            else right_value
+        )

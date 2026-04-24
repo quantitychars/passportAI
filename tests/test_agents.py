@@ -206,48 +206,367 @@ class TestGS1Specialist:
 # ⏳ PENDING — DataAuditAgent (activate on day 4, шаг 3.4)
 # ===========================================================================
 
-@pytest.mark.skip(reason="DataAuditAgent not yet implemented — activate on day 4")
-class TestDataAuditRuleBased:
-    """Rule-based completeness audit — no Ollama required."""
+class TestDataAuditAgent:
+    """Cross-agent audit synthesis — deterministic, no Ollama required."""
 
     @pytest.fixture
     def agent(self):
         from agents.data_audit_agent import DataAuditAgent
         return DataAuditAgent(client=None)
 
-    def test_missing_manufacturer_lowers_score(self, agent):
-        passport = {"credentialSubject": {}}
-        result = agent._rule_based_audit(passport, ["manufacturer"])
-        assert result["readiness_score"] < 60
+    def _domain_data(self, product_group="textiles", *, misaligned=False):
+        selected_group = "batteries" if misaligned else product_group
 
-    def test_missing_manufacturer_in_missing_essential(self, agent):
-        passport = {"credentialSubject": {}}
-        result = agent._rule_based_audit(passport, ["manufacturer"])
-        assert "manufacturer" in result["missing_essential"]
-
-    def test_score_breakdown_sums_to_total(self, agent):
-        passport = {"credentialSubject": {}}
-        result = agent._rule_based_audit(passport, [])
-        breakdown = result["score_breakdown"]
-        total = (
-            breakdown["essential_fields"]
-            + breakdown["recommended_fields"]
-            + breakdown["documents_attached"]
-            + breakdown["photo_standardized"]
-        )
-        assert total == breakdown["total"]
-
-    def test_material_sum_inconsistency_flagged(self, agent):
-        passport = {
-            "credentialSubject": {
-                "materialComposition": [
-                    {"material": "cotton", "percentage": 60},
-                    {"material": "polyester", "percentage": 30},
-                ]
-            }
+        sectoral = {
+            "textiles": {} if selected_group == "textiles" else None,
+            "batteries": {} if selected_group == "batteries" else None,
+            "electrical_appliances": {} if selected_group == "electrical_appliances" else None,
         }
-        result = agent._rule_based_audit(passport, [])
-        assert len(result["inconsistencies"]) > 0
+
+        expected_profile = {
+            "textiles": "textile_core_v1",
+            "batteries": "battery_passport_annex_xiii_v1",
+            "electrical_appliances": "electrical_appliance_espr_ready_v1",
+        }[product_group]
+
+        return {
+            "espr_core": {
+                "product_group": product_group,
+                "espr_category": product_group,
+                "sector_profile": {
+                    "name": expected_profile,
+                    "version": "1.0",
+                    "regulatory_source": ["REG_2024_1781_ESPR"],
+                },
+                "visible_certifications": [],
+            },
+            "sectoral": sectoral,
+            "voluntary_esg": None,
+        }
+
+    def _success_envelope(self, payload):
+        return {
+            "success": True,
+            "agent": "UpstreamAgent",
+            "is_mock": True,
+            "data": payload,
+        }
+
+    def _agent_payload(
+        self,
+        *,
+        missing_fields=None,
+        warnings=None,
+        contradictions=None,
+        needs_human_review=False,
+        confidence_source="insufficient_data",
+        agent_summary="ok",
+        recommended_next_actions=None,
+        where_to_get_data=None,
+        domain_data=None,
+    ):
+        return {
+            "domain_data": domain_data or {
+                "espr_core": {},
+                "sectoral": {
+                    "textiles": None,
+                    "batteries": None,
+                    "electrical_appliances": None,
+                },
+            },
+            "assessment": {
+                "confidence_source": confidence_source,
+                "missing_fields": missing_fields or [],
+                "warnings": warnings or [],
+                "assumptions": [],
+                "contradictions": contradictions or [],
+                "needs_human_review": needs_human_review,
+            },
+            "advisory": {
+                "agent_summary": agent_summary,
+                "business_risks": [],
+                "recommended_next_actions": recommended_next_actions or [],
+                "supplier_requests": [],
+                "where_to_get_data": where_to_get_data or [],
+                "next_batch_improvements": [],
+            },
+        }
+
+    def _missing_field(
+        self,
+        *,
+        field="espr_core.identifiers_hint.gtin",
+        severity="required",
+        reason="Identifier is missing from trusted input.",
+        reason_code="missing",
+        source_domain="gs1",
+        blocking=False,
+        current_evidence_status="absent",
+        acceptable_evidence=None,
+        closure_condition=None,
+        why_it_matters="Stable identifier evidence is needed for traceability.",
+        owner_hint="brand_owner",
+        where_to_get_data="ERP, PIM, barcode registry, or trusted product master data",
+        action="Provide the authoritative identifier from master data.",
+        can_be_inferred=False,
+        requires_supplier_confirmation=False,
+    ):
+        return {
+            "field": field,
+            "severity": severity,
+            "reason": reason,
+            "reason_code": reason_code,
+            "action": action,
+            "regulatory_basis": None,
+            "deadline": None,
+            "can_be_inferred": can_be_inferred,
+            "requires_supplier_confirmation": requires_supplier_confirmation,
+            "source_domain": source_domain,
+            "gap_id": f"{field}:{reason_code}",
+            "blocking": blocking,
+            "source_agents": ["GS1Specialist"],
+            "current_evidence_status": current_evidence_status,
+            "closure_condition": closure_condition
+            or f"Provide authoritative evidence for {field}.",
+            "acceptable_evidence": acceptable_evidence or ["system_export", "document"],
+            "why_it_matters": why_it_matters,
+            "owner_hint": owner_hint,
+            "where_to_get_data": where_to_get_data,
+        }
+
+    def test_run_returns_base_agent_envelope(self, agent):
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(),
+        )
+        assert result["success"] is True
+        assert result["agent"] == "DataAuditAgent"
+        assert result["is_mock"] is True
+        assert "data" in result
+
+    def test_dedupes_same_gap_and_collects_source_agents(self, agent):
+        regulatory_gap = self._missing_field(
+            field="espr_core.identifiers_hint.gtin",
+            reason="Identifier required for traceability is missing.",
+            reason_code="missing",
+            source_domain="regulatory",
+            owner_hint="internal_compliance",
+            acceptable_evidence=["document"],
+            where_to_get_data="classification worksheet or compliance file",
+            action="Confirm the required identifier from compliance records.",
+        )
+        legal_gap = self._missing_field(
+            field="espr_core.identifiers_hint.gtin",
+            reason="No documentary support for identifier value was provided.",
+            reason_code="missing",
+            source_domain="legal",
+            owner_hint="internal_compliance",
+            acceptable_evidence=["document"],
+            where_to_get_data="declaration of conformity or technical documentation",
+            action="Provide documentary support for the identifier.",
+        )
+
+        regulatory_result = self._success_envelope(
+            self._agent_payload(
+                missing_fields=[regulatory_gap],
+                agent_summary="regulatory ok",
+            )
+        )
+        legal_result = self._success_envelope(
+            self._agent_payload(
+                missing_fields=[legal_gap],
+                agent_summary="legal ok",
+            )
+        )
+
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(),
+            regulatory_result=regulatory_result,
+            legal_result=legal_result,
+        )
+
+        data = result["data"]
+        gaps = data["assessment"]["missing_fields"]
+
+        assert len(gaps) == 1
+        assert gaps[0]["field"] == "espr_core.identifiers_hint.gtin"
+        assert gaps[0]["reason_code"] == "missing"
+        assert set(gaps[0]["source_agents"]) == {"RegulatoryConsultant", "LegalAgent"}
+
+    def test_blocked_by_conflicts_when_final_state_is_misaligned(self, agent):
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(product_group="textiles", misaligned=True),
+        )
+
+        assessment = result["data"]["assessment"]
+        assert assessment["readiness_verdict"] == "blocked_by_conflicts"
+        assert assessment["is_publishable"] is False
+        assert len(assessment["contradictions"]) > 0
+
+    def test_not_ready_when_blocking_gap_exists(self, agent):
+        legal_gap = self._missing_field(
+            field="espr_core.compliance_hint.declaration_of_conformity",
+            severity="required",
+            reason="Declaration of conformity document is absent.",
+            reason_code="document_absent",
+            source_domain="legal",
+            current_evidence_status="absent",
+            acceptable_evidence=["document"],
+            owner_hint="internal_compliance",
+            where_to_get_data="declaration of conformity or technical documentation",
+            action="Provide the declaration of conformity document.",
+        )
+
+        legal_result = self._success_envelope(
+            self._agent_payload(
+                missing_fields=[legal_gap],
+                agent_summary="legal gap found",
+            )
+        )
+
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(),
+            legal_result=legal_result,
+        )
+
+        assessment = result["data"]["assessment"]
+        assert assessment["readiness_verdict"] == "not_ready"
+        assert assessment["is_publishable"] is False
+        assert len(assessment["blocking_issues"]) > 0
+
+    def test_ready_with_gaps_is_not_publishable_when_human_review_needed(self, agent):
+        legal_result = self._success_envelope(
+            self._agent_payload(
+                missing_fields=[],
+                needs_human_review=True,
+                agent_summary="human review required",
+            )
+        )
+
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(),
+            legal_result=legal_result,
+        )
+
+        assessment = result["data"]["assessment"]
+        assert assessment["readiness_verdict"] == "ready_with_gaps"
+        assert assessment["needs_human_review"] is True
+        assert assessment["is_publishable"] is False
+
+    def test_ready_when_no_gaps_conflicts_or_review_flags(self, agent):
+        result = agent.run(
+            reconciled_domain_data=self._domain_data(),
+            vision_result=self._success_envelope(self._agent_payload(agent_summary="vision ok")),
+            regulatory_result=self._success_envelope(self._agent_payload(agent_summary="reg ok")),
+            legal_result=self._success_envelope(self._agent_payload(agent_summary="legal ok")),
+            lca_result=self._success_envelope(self._agent_payload(agent_summary="lca ok")),
+            gs1_result=self._success_envelope(self._agent_payload(agent_summary="gs1 ok")),
+        )
+
+        assessment = result["data"]["assessment"]
+        assert assessment["readiness_verdict"] == "ready"
+        assert assessment["readiness_score"] >= 90
+        assert assessment["is_publishable"] is True
+        assert assessment["missing_fields"] == []
+        assert assessment["contradictions"] == []
+
+
+class TestDataAuditValidation:
+    """Validator coverage for the new DataAuditAgent contract."""
+
+    @pytest.fixture
+    def agent(self):
+        from agents.data_audit_agent import DataAuditAgent
+        return DataAuditAgent(client=None)
+
+    @pytest.fixture
+    def valid_payload(self, agent):
+        result = agent.run(
+            reconciled_domain_data={
+                "espr_core": {
+                    "product_group": "textiles",
+                    "espr_category": "textiles",
+                    "sector_profile": {
+                        "name": "textile_core_v1",
+                        "version": "1.0",
+                        "regulatory_source": ["REG_2024_1781_ESPR"],
+                    },
+                    "visible_certifications": [],
+                },
+                "sectoral": {
+                    "textiles": {},
+                    "batteries": None,
+                    "electrical_appliances": None,
+                },
+                "voluntary_esg": None,
+            },
+        )
+        assert result["success"] is True
+        return result["data"]
+
+    def test_valid_payload_passes_validation(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert errors == []
+
+    def test_missing_reason_code_fails_validation(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        valid_payload["assessment"]["missing_fields"] = [
+            {
+                "field": "espr_core.identifiers_hint.gtin",
+                "severity": "required",
+                "reason": "Identifier is missing.",
+                "action": "Provide identifier.",
+                "regulatory_basis": None,
+                "deadline": None,
+                "can_be_inferred": False,
+                "requires_supplier_confirmation": False,
+                "source_domain": "gs1",
+                "gap_id": "espr_core.identifiers_hint.gtin:missing",
+                "blocking": True,
+                "source_agents": ["GS1Specialist"],
+                "current_evidence_status": "absent",
+                "closure_condition": "Provide authoritative identifier evidence.",
+                "acceptable_evidence": ["system_export", "document"],
+                "why_it_matters": "Identifier evidence is needed for traceability.",
+                "owner_hint": "brand_owner",
+                "where_to_get_data": "ERP or barcode registry",
+            }
+        ]
+
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert any("reason_code" in err for err in errors)
+
+    def test_invalid_readiness_verdict_fails_validation(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        valid_payload["assessment"]["readiness_verdict"] = "draftish"
+
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert any("readiness_verdict" in err for err in errors)
+
+    def test_readiness_score_out_of_range_fails_validation(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        valid_payload["assessment"]["readiness_score"] = 101
+
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert any("readiness_score" in err for err in errors)
+
+    def test_empty_missing_fields_is_allowed(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        valid_payload["assessment"]["missing_fields"] = []
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert not any("missing_fields must be a non-empty list" in err for err in errors)
+
+    def test_empty_recommended_next_actions_is_allowed(self, valid_payload):
+        from agents.validation import validate_agent_output
+
+        valid_payload["advisory"]["recommended_next_actions"] = []
+        errors = validate_agent_output("DataAuditAgent", valid_payload)
+        assert not any("recommended_next_actions must be a non-empty list" in err for err in errors)
 
 
 # ===========================================================================
