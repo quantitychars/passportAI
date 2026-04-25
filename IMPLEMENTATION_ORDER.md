@@ -1,931 +1,369 @@
-# PassportAI — IMPLEMENTATION ORDER v3
+# PassportAI — Revised Implementation Order
 
-**Цель этой версии:** успеть к **30.04** без потери функциональности.
-**Главное архитектурное решение:**
+## Phase 0 — Baseline status
 
-- `PassportPipeline` — **единственный оркестратор**
-- `BaseAgent` — **единственный LLM-контракт**
-- между шагами передаётся **typed state**, а не общий reasoning trace
-- `run_verified_task()` используется **только там, где есть регуляторный / юридический риск**
-- `thinking_orchestrator.py` и отдельный `reasoning_validator.py` **не возвращаются** в архитектуру
+### Already completed / materially advanced
 
----
+- `PassportPipeline` is the only orchestrator
+- boundary-clean agent contract is established
+- `DataAuditAgent` is implemented as cross-agent evidence auditor
+- `validation.py` is aligned to the new audit contract
+- `DPPGenerator` is refactored toward projection-only generation
+- pipeline backbone is centered on `reconciled_domain_data`, not on `passport_json`
+- pipeline and audit tests already exist for the new backbone
 
-## 0. Замороженные правила архитектуры
+## Core rule for the rest of the build
 
-### 0.1. Что запрещено
+No new abstractions unless they directly improve:
 
-- Ни один агент не вызывает другой агент напрямую.
-- Ни один агент не получает raw reasoning другого агента.
-- Никакой shared `ThinkingContext` как межагентной памяти.
-- Никакой “умный глобальный оркестратор” поверх `PassportPipeline`.
+- demo reliability
+- submission quality
+- auditability
+- schema compliance
+- speed of integration
 
-### 0.2. Что разрешено
-
-- Агенты получают только релевантные входы и возвращают структурированный output.
-- `PassportPipeline` отвечает за порядок шагов, обработку ошибок и сборку результата.
-- `DataAuditAgent` и pipeline-проверки отвечают за cross-agent consistency.
-- `StorageProvider` отвечает за публичный URL, который потом кодируется в QR.
-
-### 0.3. Классы агентов по режиму работы
-
-**A. Детерминированные / почти детерминированные**
-
-- `DataAuditAgent`
-- `LCASpecialist` (lookup CSV)
-- `GS1Specialist`
-- QR / storage / report generation
-
-**B. Structured extraction**
-
-- `VisionAgent`
-- `DPPGenerator` (если использует schema-aware fill)
-
-**C. Regulatory / legal interpretation**
-
-- `RegulatoryConsultant`
-- `LegalAgent`
-
-Только группа **C** использует `run_verified_task()`.
+No new “platform” work before the vertical slice is complete.
 
 ---
 
-## 1. Что уже считается сделанным
+## Phase 1 — Must-finish engineering before 30.04
 
-### 1.1 — Ollama + модель
+### Goal
 
-**Статус:** DONE
+Ship a **stable end-to-end contest slice** that is demoable and test-backed.
 
-### 1.2 — `GemmaClient`
+### 1. Packaging integration
 
-**Статус:** DONE
+**Target date: 26–27.04**
 
-Должно уже быть:
+Implement `_run_packaging_step()` so that it:
 
-- `generate()`
-- `think()`
-- `analyze_image()`
-- `call_tool()`
-- retry / timeout / JSON fallback
+- calls the new `DPPGenerator.generate_from_reconciled_state(...)`
+- stores `passport_json` in `PipelineState`
+- performs generator validation
+- produces a stable artifact output path for the DPP JSON
 
-### 1.3 — `BaseAgent`
+**Definition of done**
 
-**Статус:** DONE
-
-Должно уже быть:
-
-- единый `__init__`
-- `call_tool()`
-- `run_verified_task()`
-- `_load_prompt()`
-- `_format_success()` / `_format_error()`
-- единый `AgentResult`
-
-### 1.4 — DPP schema / JSON structure
-
-**Статус:** DONE
-
-Должно уже быть:
-
-- `DPP_SCHEMA.json`
-- category schemas в `schemas/`
-- базовый JSON-LD/VCDM каркас
+- pipeline run returns `passport_json`
+- `passport_json` is generated from `reconciled_domain_data`, not from raw agent outputs
+- no old generator-first flow remains in pipeline
 
 ---
 
-# 2. Реальный план до 30.04
+### 2. DPPGenerator test coverage
 
-## Общая стратегия
+**Target date: 27.04**
 
-Не делать “всех реальных агентов, а потом интеграцию”.
+Create `tests/test_dpp_generator.py` covering:
 
-Делать так:
+- generation from reconciled state
+- draft vs issued behavior
+- derivation trace presence
+- injected `now`
+- basic `validate()`
+- `validate_with_jsonschema()` success/failure paths
 
-1. Зафиксировать pipeline contracts
-2. Собрать mock end-to-end
-3. По одному заменять mocks на real implementation
-4. Только потом делать AWS-слой хранения / публикации
+**Definition of done**
 
----
-
-## День 1 (утро) — Шаг 1.5 + Шаг 3.0
-
-# Шаг 1.5 — `PipelineState` + `PipelineResult`
-
-**Новые / изменяемые файлы:**
-
-- `src/core/pipeline.py`
-- возможно `src/config.py`
-
-### Что сделать
-
-Создать typed state, через который пойдёт весь pipeline.
-
-### Минимальная структура
-
-```python
-from dataclasses import dataclass, field
-from typing import Any
-
-@dataclass
-class PipelineState:
-    image_path: str
-    description: str
-    gtin: str | None = None
-    certificates: list[str] = field(default_factory=list)
-    storage_mode: str = "local"
-
-    standardized_photo_path: str | None = None
-    image_description: str | None = None
-
-    vision_result: dict[str, Any] | None = None
-    regulatory_result: dict[str, Any] | None = None
-    legal_result: dict[str, Any] | None = None
-    lca_result: dict[str, Any] | None = None
-    gs1_result: dict[str, Any] | None = None
-
-    passport_json: dict[str, Any] | None = None
-    audit_result: dict[str, Any] | None = None
-
-    passport_id: str | None = None
-    passport_url: str | None = None
-    qr_path: str | None = None
-
-    warnings: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-
-@dataclass
-class PipelineResult:
-    success: bool
-    passport_id: str | None
-    passport_json: dict[str, Any] | None
-    readiness_score: int | None
-    passport_url: str | None
-    qr_path: str | None
-    warnings: list[str]
-    errors: list[str]
-```
-
-### Зачем это нужно
-
-Чтобы все остальные шаги подключались к одному стабильному контракту.
-
-### Definition of Done
-
-- `src/core/pipeline.py` компилируется
-- `PipelineState` и `PipelineResult` существуют
-- нигде не осталось зависимости от `ThinkingOrchestrator`
+- `pytest tests/test_dpp_generator.py -v` passes
+- generator behavior is locked against regressions
 
 ---
 
-# Шаг 3.0 — `PassportPipeline` skeleton
+### 3. GapReportGenerator implementation
 
-**Файл:** `src/core/pipeline.py`
+**Target date: 27–28.04**
 
-### Что сделать
+Implement `GapReportGenerator` from `audit_result`, not from raw agent outputs and not from rendered DPP.
 
-Создать **единственный оркестратор системы**.
+It must clearly answer:
 
-### Pipeline responsibilities
+- what is missing
+- why it matters
+- what blocks publication
+- where the data should come from
+- what the SME should do next
 
-- принимает `PipelineState`
-- вызывает шаги по порядку
-- собирает warnings/errors
-- останавливается на критических фейлах
-- возвращает `PipelineResult`
+**Definition of done**
 
-### Минимальные методы
-
-- `run(state: PipelineState) -> PipelineResult`
-- `_run_perception_step()`
-- `_run_generation_step()`
-- `_run_review_step()`
-- `_run_packaging_step()`
-- `_build_result()`
-
-### Важно
-
-Никакой shared reasoning логики внутри pipeline.
-
-### Definition of Done
-
-- pipeline запускается даже с mock-агентами
-- никакого `await` вне async-функции
-- порядок шагов зафиксирован в одном месте
+- report is generated from `DataAuditAgent` output
+- report is readable by non-expert SME
+- report distinguishes missing / weak / unverified / blocking issues
 
 ---
 
-## День 1 (вечер) — mock end-to-end demo
+### 4. Full vertical slice test
 
-# Шаг 1.6 — `DPPGenerator` MVP (не “идеальный”, а рабочий)
+**Target date: 28.04**
 
-**Файл:** `src/core/dpp_generator.py`
+Add one integration test for:
 
-### Что сделать
+`image/input -> pipeline -> reconciled_domain_data -> audit -> passport_json -> gap_report`
 
-Сначала не multimodal и не “умный генератор”, а **стабильный schema-aware filler**.
+**Definition of done**
 
-### Минимум для MVP
-
-- `generate_from_text(description)`
-- `_build_jsonld_wrapper()`
-- выбор schema по category
-- заполнение минимально обязательных полей
-- `merge_inputs()` уже есть, оставить как utility
-
-### Важно
-
-`DPPGenerator` не должен становиться оркестратором. Он только:
-
-- получает уже собранные product facts
-- строит `passport_json`
-- валидирует базовую структуру
-
-### Definition of Done
-
-- по тексту можно получить валидный `passport_json`
-- `tests/test_dpp_generator.py` проходят хотя бы для merge + validate + wrapper
+- one pipeline test proves end-to-end generation of both core artifacts
+- no manual hidden steps required
 
 ---
 
-# Шаг 1.7 — `Mock agents` для вертикального среза
+### 5. Minimal artifact strategy
 
-**Файлы:**
+**Target date: 28–29.04**
 
-- `agents/vision_agent.py`
-- `agents/regulatory_consultant.py`
-- `agents/legal_agent.py`
-- `agents/lca_specialist.py`
-- `agents/data_audit_agent.py`
-- `agents/gs1_specialist.py`
+Decide and implement the minimum artifact outputs needed for the demo:
 
-### Что сделать
+- DPP JSON
+- Gap Report HTML or Markdown
+- optional local package folder
+- optional QR placeholder only if already cheap and stable
 
-Для каждого skeleton-агента сделать **временную mock-реализацию**, которая возвращает реалистичный output в финальном формате.
+**Definition of done**
 
-### Обязательное правило
-
-Mock должен возвращать **тот же shape**, что и будущая реальная версия.
-
-### Пример
-
-- `VisionAgent.run()` → `{"category": "furniture", "materials": ["oak wood"], ...}`
-- `RegulatoryConsultant.run()` → `{"espr_category": "furniture", "required_fields": [...], ...}`
-- `DataAuditAgent.run()` → `{"readiness_score": 62, "missing_essential": [...], ...}`
-
-### Definition of Done
-
-- pipeline проходит end-to-end без реального LLM в каждом шаге
-- выходы всех mock-агентов уже совпадают с будущими contracts
+- artifacts are saved deterministically
+- demo can show real files, not only console output
 
 ---
 
-# Шаг 1.8 — `StorageProvider` MVP
+### 6. Hero scenario lock
 
-**Файлы:**
+**Target date: 29.04**
 
-- `src/storage/base.py`
-- `src/storage/local.py`
+Freeze one primary demo scenario:
 
-### Что сделать
+- ideally **photo-only / weak-evidence first pass**
+- then stronger second pass after added evidence
 
-Сначала доделать **только local storage**.
+This becomes the single source of truth for:
 
-### Нужная функциональность
+- demo
+- writeup
+- screenshots
+- video
+- submission wording
 
-- `save_package()`
-- `get_public_url()`
-- `file_exists()`
-- `delete_package()`
+**Definition of done**
 
-### Definition of Done
-
-- package сохраняется в `output/{passport_id}/`
-- есть базовый `passport_url`
-- storage уже может быть вызван из pipeline
-
----
-
-# Шаг 1.9 — `Gradio UI` working demo
-
-**Файлы:**
-
-- `src/ui/gradio_app.py`
-- `app.py`
-
-### Что сделать
-
-Собрать рабочее демо:
-
-- upload photo
-- description
-- нажать Generate
-- получить JSON preview
-- readiness score
-- QR / placeholder QR
-- ZIP / placeholder package
-
-### Definition of Done
-
-Есть **демо-проход**, который можно показать:
-
-- фото Brand
-- продукт: дубовый стол
-- собранный паспорт
-- readiness score
+- one canonical input set
+- one canonical expected output set
+- one canonical before/after story
 
 ---
 
-## День 2 — real `VisionAgent`
+### 7. Code freeze on architecture
 
-# Шаг 2.1 — `VisionAgent` real v1
+**Target date: 30.04**
 
-**Файл:** `agents/vision_agent.py`
+After this date:
 
-### Что сделать
+- no new major abstractions
+- no strategy-pattern rewrites
+- no broad reordering of agents
+- no new “platformization”
 
-Сделать реальный агент без лишней сложности:
+Only:
 
-1. `analyze_image()`
-2. `call_tool()`
-3. structured extraction
-
-### Чего НЕ делать сейчас
-
-- не добавлять отдельный предварительный global think
-- не делать adversarial validation
-- не пытаться решать regulatory reasoning через vision
-
-### Поля, которые должен возвращать агент
-
-- `category_candidate`
-- `materials_detected`
-- `visual_features`
-- `visible_labels_text`
-- `country_of_origin_visible`
-- `confidence_visual`
-- `evidence`
-
-### Definition of Done
-
-- на реальном фото возвращается структурированный словарь
-- mock `VisionAgent` можно удалить
-- pipeline использует реальную версию без изменения остальных шагов
+- bug fixes
+- reliability
+- polish
+- submission material
 
 ---
 
-# Шаг 2.2 — `PhotoProcessor`
+## Phase 2 — Contest hardening and submission work (30.04–17.05)
 
-**Файл:** `src/processing/photo.py`
+### Goal
 
-### Что сделать
+Maximize score on judging dimensions without destabilizing the build.
 
-Реализовать:
+### 8. Demo hardening
 
-- background removal
-- белый фон
-- 800x800 PNG
+**Target date: 30.04–03.05**
 
-### Definition of Done
+Focus on:
 
-- `standardize_photo()` создаёт корректный PNG
-- файл можно класть в output package
+- deterministic demo path
+- stable timing
+- understandable outputs
+- no flaky steps
+- no manual hidden fixes during demo
 
----
+**Definition of done**
 
-# Шаг 2.3 — perception step integration
-
-**Файл:** `src/core/pipeline.py`
-
-### Что сделать
-
-Объединить:
-
-- `VisionAgent`
-- `standardize_photo()`
-- merge с user input
-
-### Режим выполнения
-
-Можно сделать параллельно через `asyncio.to_thread`, но только после того как одиночные вызовы уже работают.
-
-### Definition of Done
-
-- perception step стабилен
-- дальше в pipeline передаются уже нормализованные product facts
+- you can run the same demo multiple times with predictable result
+- you know exactly which outputs/screens to show
 
 ---
 
-## День 3 — real `DPPGenerator`
+### 9. Submission-grade UX polish
 
-# Шаг 2.4 — schema-aware generation
+**Target date: 02.05–05.05**
 
-**Файл:** `src/core/dpp_generator.py`
+Only small polish:
 
-### Что сделать
+- labels
+- report wording
+- artifact naming
+- screenshots
+- visual clarity of outputs
 
-Довести генератор до реального состояния:
+Not allowed:
 
-- выбор нужной schema по category
-- заполнение `credentialSubject`
-- генерация JSON-LD wrapper
-- валидация результата
-- поддержка multimodal merged input
-
-### Что важно
-
-`DPPGenerator` должен быть **максимально детерминированным**.
-Свободного текста модели здесь должно быть меньше, чем структурированного заполнения.
-
-### Definition of Done
-
-- из merged product facts строится реальный `passport.json`
-- есть `validate()`
-- сгенерированный JSON можно сохранить и показать в UI
+- architecture rewrites
+- new agent responsibilities
+- scope-expanding features
 
 ---
 
-# Шаг 2.5 — offline JSON-LD / context loading
+### 10. Writeup draft
 
-**Файлы:**
+**Target date: 04.05–07.05**
 
-- `src/utils/jsonld_loader.py`
-- `contexts/`
+Write the Kaggle writeup early, not at the end.
 
-### Что сделать
+It must clearly cover:
 
-Довести офлайн-кэш и загрузку контекстов до рабочего состояния.
+- the real-world problem
+- why SMEs struggle with DPP/circular-product compliance
+- where Gemma 4 is actually used
+- architecture overview
+- why the system is safe against invented facts
+- one hero demo workflow
+- current limitations
+- future direction
 
-### Definition of Done
+**Definition of done**
 
-- проект не зависит от живого интернета для JSON-LD contexts
-- валидация не ломается из-за внешних URL
-
----
-
-## День 4 — `DataAuditAgent` + cross-consistency
-
-# Шаг 3.1 — `DataAuditAgent` real
-
-**Файл:** `agents/data_audit_agent.py`
-
-### Что сделать
-
-Сделать его **детерминированным**.
-
-### Ответственность агента
-
-- readiness score
-- missing essential fields
-- missing recommended fields
-- warnings
-- inconsistencies
-
-### Не делать
-
-- не превращать его в reasoning-heavy LLM agent
-- не пытаться дублировать legal/regulatory reasoning
-
-### Definition of Done
-
-- audit работает только на структурах Python
-- score воспроизводим
+- complete first draft exists
+- not just notes
+- can already be edited down to final submission
 
 ---
 
-# Шаг 3.2 — cross-agent consistency check
+### 11. Video script and storyboard
 
-**Место:**
+**Target date: 06.05–09.05**
 
-- либо внутри `DataAuditAgent`
-- либо helper в `src/core/pipeline.py`
+Prepare the 3-minute video before recording.
 
-### Что проверять
+Structure:
 
-- `VisionAgent.category_candidate` vs `RegulatoryConsultant.espr_category`
-- `materials_detected` vs `passport_json.materials`
-- `country_of_origin_visible` vs declared origin
-- наличие обязательных полей по category
+1. problem in one sharp sentence
+2. hero input
+3. first-pass draft passport
+4. gap report
+5. second-pass improvement
+6. why Gemma 4 matters
+7. why this matters for EU circular-product transition / SME enablement
 
-### Режим
+**Definition of done**
 
-`strict_mode=False` по умолчанию:
-
-- конфликт флагируется
-- pipeline не блокируется
-
-### Definition of Done
-
-- inconsistencies появляются в audit output
-- UI показывает эти флаги
+- exact script
+- exact screen sequence
+- exact spoken lines
+- exact outputs to show
 
 ---
 
-## День 5 — `RegulatoryConsultant`
+### 12. Public repo cleanup
 
-# Шаг 3.3 — `RegulatoryConsultant` real
+**Target date: 08.05–10.05**
 
-**Файл:** `agents/regulatory_consultant.py`
+Make repo submission-ready:
 
-### Что сделать
+- clear README
+- architecture diagram if cheap
+- setup instructions
+- how to run demo
+- what Gemma 4 does in the stack
+- known limitations
 
-Это первый настоящий агент, который использует `run_verified_task()`.
+**Definition of done**
 
-### Входы
-
-- merged product facts
-- candidate category
-- visible labels / certificates
-
-### Выходы
-
-- `espr_category`
-- `applicable_regulations`
-- `required_fields`
-- `missing_regulatory_inputs`
-- `evidence`
-
-### Definition of Done
-
-- агент даёт category + regulatory requirements
-- его результат уже участвует в audit
+- someone external can understand the project quickly
+- repo reads like a product, not like private dev history
 
 ---
 
-## День 6 — `LegalAgent`
+### 13. Video recording + first cut
 
-# Шаг 3.4 — `LegalAgent` real
+**Target date: 10.05–12.05**
 
-**Файл:** `agents/legal_agent.py`
+Record early enough to redo if needed.
 
-### Что сделать
+**Definition of done**
 
-Тоже использовать `run_verified_task()`.
-
-### Выходы
-
-- `compliance_flags`
-- `missing_documents`
-- `legal_risks`
-- `reach_flags` / `rohs_flags` / `vat_or_trade_flags` если применимо
-- `evidence`
-
-### Definition of Done
-
-- legal result встраивается в `PipelineState`
-- audit учитывает legal risks
+- one full cut exists
+- can be reviewed critically
+- no reliance on one perfect take
 
 ---
 
-## День 7 — `LCASpecialist`
+### 14. Final polish window under exam constraints
 
-# Шаг 3.5 — `LCASpecialist` real
+**Target date: 12.05–17.05**
 
-**Файл:** `agents/lca_specialist.py`
+This is the exam-safe zone.
 
-### Что сделать
+Only:
 
-Сделать через CSV lookup, а не через reasoning.
+- bug fixes
+- script tightening
+- video trimming
+- writeup tightening
+- cover image / screenshots
+- final run-throughs
 
-### Источник
+Not allowed:
 
-- `data/gwp_coefficients.csv`
-
-### Выходы
-
-- `estimated_gwp_kg_co2e`
-- `coefficient_source`
-- `assumptions`
-- `confidence`
-
-### Definition of Done
-
-- для известных материалов возвращается воспроизводимый результат
-- нет зависимости от LLM там, где можно обойтись таблицей
+- major code refactor
+- new subsystem
+- new agent
+- schema redesign
 
 ---
 
-## День 8 — `GS1Specialist` + QR
+### 15. Submission freeze
 
-# Шаг 3.6 — `GS1Specialist` real
+**Target date: 17.05**
 
-**Файл:** `agents/gs1_specialist.py`
+Everything public-facing should already be ready by then, one day before the official deadline on 18 May 2026, 23:59 UTC.
 
-### Что сделать
+**Definition of done**
 
-Добавить:
-
-- GTIN normalization
-- product identifier assembly
-- final public passport URL usage
-
-### Definition of Done
-
-- если GTIN передан, он включается в package
-- если GTIN нет, система не падает
+- repo public and clean
+- demo works
+- writeup finalized
+- video finalized
+- artifacts exported
+- backup copy exists
 
 ---
 
-# Шаг 3.7 — QR generation
+## Phase 3 — Explicitly out of scope before submission
 
-**Файл:** `src/processing/qr.py`
+Do **not** add these before the contest is submitted unless a critical dependency forces it:
 
-### Что сделать
+- sector strategy/plugin refactor
+- broad Pydantic rewrite of the whole codebase
+- cloud/HSM signing infrastructure
+- self-correction loop orchestration
+- broad multi-category platformization
+- speculative scalability architecture
 
-Реализовать `generate_qr()`.
-
-### Жёсткое правило
-
-QR делается **только после** того, как есть стабильный `passport_url`.
-
-### Definition of Done
-
-- QR PNG генерируется
-- сканирование ведёт на `passport_url`
+These are post-submission improvements, not pre-submission necessities.
 
 ---
 
-## День 9 — HTML/PDF + packaging
+## Final success criteria
 
-# Шаг 3.8 — `GapReportGenerator`
+### By 30.04
 
-**Файл:** `src/core/gap_report.py`
+- one stable end-to-end working system exists
 
-### Что сделать
+### By 17.05
 
-Сначала сделать минимальную рабочую версию:
+- one strong story, one strong demo, one strong repo, one strong writeup, one strong video exist
 
-- template context
-- render Jinja2
-- HTML → PDF
-
-### Definition of Done
-
-- `gap_report.pdf` создаётся
-- PDF входит в package
-
----
-
-# Шаг 4.1 — `FastAPI server`
-
-**Файл:** `src/server/passport_server.py`
-
-### Что сделать
-
-Не строить сложный background job server.
-Сделать сначала MVP:
-
-- serve local output files
-- basic routes for generated passports
-
-### Definition of Done
-
-- локальный `passport_url` открывается в браузере
-- JSON / HTML / QR доступны по URL
-
----
-
-# Шаг 4.2 — `Gradio UI` polishing
-
-**Файл:** `src/ui/gradio_app.py`
-
-### Что сделать
-
-Довести UI до конкурсного состояния:
-
-- прогресс по шагам
-- preview outputs
-- download package
-- понятные ошибки
-
-### Definition of Done
-
-- UI годится для записи демо-видео
-
----
-
-## День 10 (30.04) — AWS MVP + финальный буфер
-
-# Шаг 3.9 — AWS S3 Storage MVP
-
-**Файл:** `src/storage/aws_s3.py`
-
-### Что сделать
-
-Реализовать только то, что критично для печатного QR:
-
-- `save_package()`
-- `get_public_url()`
-- `file_exists()`
-- `.env.example` для AWS
-
-### Какой scope допустим до дедлайна
-
-**Да:**
-
-- загрузка package в S3
-- стабильный публичный URL
-- QR на этот URL
-- deploy instructions
-
-**Нет, если не останется буфера:**
-
-- полноценная AWS orchestration платформа
-- асинхронные job queues
-- autoscaling GPU inference layer
-- сложный multi-tenant backend
-
-### Definition of Done
-
-- можно выбрать `storage_mode="s3"`
-- package реально загружается в bucket
-- QR открывает облачный URL
-
----
-
-# Шаг 4.3 — app.py final entrypoint
-
-**Файл:** `app.py`
-
-### Что сделать
-
-Одна понятная точка входа:
-
-- launch Gradio
-- optional FastAPI mount
-- env-based mode selection
-
-### Definition of Done
-
-- запуск по README понятен
-- локальная и S3-конфигурация не конфликтуют
-
----
-
-# Шаг 4.4 — Финальный Brand test
-
-### Сценарий
-
-- фото продукта Brand
-- описание
-- генерация полного package
-- `passport.json`
-- HTML
-- PDF
-- QR
-- readiness score
-
-### Definition of Done
-
-Это можно показать судьям без ручных оправданий.
-
----
-
-# Шаг 4.5 — Демо-видео
-
-### Что показать
-
-1. upload product photo
-2. generation flow
-3. resulting passport
-4. readiness / compliance view
-5. QR scan → open passport URL
-
----
-
-# Шаг 5.x — После 30.04 / конкурсная упаковка
-
-## Шаг 5.1 — README
-
-- local setup
-- AWS setup
-- architecture diagram
-- how to add your own product data
-
-## Шаг 5.2 — Kaggle / contest writeup
-
-- problem
-- why Gemma
-- anti-hallucination design
-- schema-first DPP generation
-- cloud-ready QR workflow
-
-## Шаг 5.3 — Live demo
-
-Если останется время: HF Spaces / публичный demo endpoint
-
-## Шаг 5.4 — Media gallery
-
-cover + screenshots + QR scan flow
-
-## Шаг 5.5 — Submission checklist
-
-- README
-- demo video
-- reproducible setup
-- sample output package
-
----
-
-# 3. AWS: что реально успеть
-
-## Реалистичная цель до 30.04
-
-Сделать **AWS storage deployment path**, а не “полный AWS inference platform”.
-
-### Значит:
-
-- inference может продолжать работать локально или на одной машине
-- outputs публикуются в S3
-- QR кодирует стабильный облачный URL
-- любой человек может поднять проект из репозитория, прописать свои AWS credentials и получить печатный QR workflow
-
-## Рекомендуемый AWS scope v1
-
-### Обязательно
-
-- `src/storage/aws_s3.py`
-- `HOSTING_URL`
-- bucket setup инструкции
-- IAM policy example
-- README section “Deploy with S3”
-
-### Желательно
-
-- CloudFront-ready URL support
-- `HOSTING_URL=https://your-domain-or-cloudfront.net`
-- `scripts/create_s3_bucket.sh` или `deploy/aws/README.md`
-
-### Необязательно до дедлайна
-
-- ECS/Fargate/EC2 automation
-- Terraform/CDK
-- async queue processing
-- managed auth system
-
----
-
-# 4. Приоритеты, если начнёт гореть дедлайн
-
-Если времени мало, режь scope в таком порядке:
-
-## Нельзя вырезать
-
-- `PassportPipeline`
-- `VisionAgent`
-- `DPPGenerator`
-- `DataAuditAgent`
-- `QR`
-- `LocalStorage`
-- working Gradio demo
-
-## Можно упростить
-
-- `LegalAgent`
-- `LCASpecialist`
-- `GS1Specialist`
-- `GapReportGenerator`
-- AWS deployment automation
-
-## Можно отложить
-
-- FastAPI background tasks
-- сложный async server
-- production-grade cloud orchestration
-
----
-
-# 5. Итоговое правило реализации
-
-## Правильный порядок
-
-- сначала **contracts + thin pipeline**
-- потом **mock vertical slice**
-- потом **real agents one by one**
-- потом **storage / QR / packaging**
-- потом **AWS publication layer**
-
-## Неправильный порядок
-
-- сначала “все агенты”
-- потом поздняя интеграция
-- потом попытка спасти всё через глобальный orchestrator
-
----
-
-# 6. Минимальный must-have к 30.04
-
-К финалу у проекта должно быть:
-
-- рабочий `PassportPipeline`
-- реальный `VisionAgent`
-- реальный `DPPGenerator`
-- реальный `DataAuditAgent`
-- хотя бы базовый `RegulatoryConsultant`
-- `LocalStorage`
-- опционально `S3Storage`
-- `QR`
-- Gradio demo
-- один убедительный сценарий: **Brand → дубовый стол → готовый DPP package**
-
-Если всё это есть, проект уже выглядит как конкурсный продукт, а не как набор заготовок.
+Winning depends not only on code quality, but on how clearly the project demonstrates real impact, technical rigor, and why Gemma 4 is essential.
