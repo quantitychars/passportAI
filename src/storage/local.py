@@ -88,19 +88,20 @@ class LocalStorage(StorageProvider):
         package_dir = self.output_dir / passport_id
         package_dir.mkdir(parents=True, exist_ok=True)
 
-        # TODO: implement file copying
-        # for filename, source_path in files.items():
-        #     source_path = Path(source_path)
-        #     if not source_path.exists():
-        #         raise StorageError(f"Source file not found: {source_path}")
-        #     destination = package_dir / filename
-        #     try:
-        #         shutil.copy2(str(source_path), str(destination))
-        #     except OSError as e:
-        #         raise StorageError(f"Failed to copy {filename}: {e}") from e
-        #
-        # return f"{self.hosting_url}/{passport_id}"
-        raise NotImplementedError("LocalStorage.save_package() not yet implemented")
+        for filename, source_path in files.items():
+            source_path = Path(source_path)
+            if not source_path.exists():
+                raise StorageError(f"Source file not found: {source_path}")
+
+            destination = package_dir / filename
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if source_path.resolve() != destination.resolve():
+                    shutil.copy2(str(source_path), str(destination))
+            except OSError as exc:
+                raise StorageError(f"Failed to copy {filename}: {exc}") from exc
+
+        return f"{self.hosting_url}/{passport_id}"
 
     def get_public_url(self, passport_id: str, filename: str) -> str:
         """Build public URL for a specific file.
@@ -150,12 +151,10 @@ class LocalStorage(StorageProvider):
         """
         package_dir = self.output_dir / passport_id
         if package_dir.exists():
-            # TODO: implement deletion
-            # try:
-            #     shutil.rmtree(str(package_dir))
-            # except OSError as e:
-            #     raise StorageError(f"Failed to delete package {passport_id}: {e}") from e
-            raise NotImplementedError("LocalStorage.delete_package() not yet implemented")
+            try:
+                shutil.rmtree(str(package_dir))
+            except OSError as exc:
+                raise StorageError(f"Failed to delete package {passport_id}: {exc}") from exc
 
     def get_package_dir(self, passport_id: str) -> Path:
         """Get the local directory path for a passport package.
