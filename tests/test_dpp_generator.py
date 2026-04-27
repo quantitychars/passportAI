@@ -1,223 +1,411 @@
-"""
-tests/test_dpp_generator.py — Tests for DPPGenerator
+"""Tests for DPPGenerator projection-only behavior.
 
-Tests:
-    - merge_inputs() — user_input overrides vision_output
-    - _compute_content_hash() — deterministic SHA-256
-    - _build_jsonld_wrapper() — valid W3C VC structure
-    - validate() — catches missing required fields
-    - generate_from_text() — requires Ollama (skipped if not available)
-
-Run:
-    pytest tests/test_dpp_generator.py -v
-    pytest tests/test_dpp_generator.py -v -k "not ollama"
+These tests intentionally target the current architecture:
+- PassportPipeline owns reconciliation.
+- DPPGenerator consumes reconciled_domain_data + audit policy only.
+- Deprecated generator-first entrypoints must stay blocked.
 """
 
-import json
+from __future__ import annotations
+
+import copy
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+from src.core.dpp_generator import DPPGenerator
+
 
 @pytest.fixture
-def generator():
-    """DPPGenerator instance without Ollama (for structural tests)."""
-    from src.core.dpp_generator import DPPGenerator
+def generator() -> DPPGenerator:
     return DPPGenerator(client=None)
 
 
 @pytest.fixture
-def sample_credential_subject():
-    """Sample credentialSubject for wrapper tests."""
+def fixed_now() -> datetime:
+    return datetime(2026, 4, 27, 12, 30, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def reconciled_textile_data() -> dict:
     return {
-        "productId": "did:web:example.com:products:test-001",
-        "productName": "Test Product",
-        "esprCategory": "textiles",
-        "economicOperator": {"name": "Test Co"},
-        "materialComposition": [{"material": "cotton", "percentage": 100}],
-        "countryOfManufacture": "UA",
-        "dppIssuer": "PassportAI",
-        "dppVersion": "1.0",
-        "dppIssuedAt": "2025-04-13T00:00:00Z",
-        "dppValidUntil": "2035-04-13T00:00:00Z",
+        "espr_core": {
+            "product_group": "textiles",
+            "espr_category": "textiles",
+            "product_name": "Canvas Tote Bag",
+            "product_description": "Reusable cotton canvas tote bag.",
+            "brand_name": "PassportAI Demo",
+            "model_name": "Demo Tote",
+            "model_number": "TOTE-001",
+            "country_of_manufacture": "UA",
+            "legal_basis": ["ESPR_2024_1781"],
+            "sector_profile": {
+                "name": "textile_core_v1",
+                "version": "1.0",
+                "regulatory_source": ["ESPR_2024_1781"],
+            },
+            "identifiers_hint": {
+                "gtin": "12345678901234",
+                "operator_identifier_value": "GLN1234567890123",
+            },
+            "operator_hint": {
+                "name": "Demo Manufacturer Ltd",
+                "country": "UA",
+            },
+            "data_carrier_hint": {
+                "type": "QR",
+                "resolver_url": "https://example.test/passports/demo-passport",
+            },
+            "compliance_hint": {
+                "declaration_present": True,
+                "technical_documentation_present": True,
+            },
+        },
+        "sectoral": {
+            "textiles": {
+                "material_composition": [
+                    {
+                        "component": "body",
+                        "material": "cotton",
+                        "percentage": 100,
+                        "material_origin_country": "UA",
+                    }
+                ],
+                "country_of_manufacture": "UA",
+                "year_of_manufacture": 2026,
+                "manufacturing_steps": [
+                    {"step": "weaving", "country": "UA"},
+                    {"step": "sewing", "country": "UA"},
+                ],
+                "reusable": True,
+                "recyclable": True,
+            },
+            "batteries": None,
+            "electrical_appliances": None,
+        },
+        "voluntary_esg": None,
     }
 
 
 @pytest.fixture
-def minimal_valid_passport(generator, sample_credential_subject):
-    """Minimal valid passport for validation tests."""
-    return generator._build_jsonld_wrapper(sample_credential_subject)
+def ready_audit_payload() -> dict:
+    return {
+        "assessment": {
+            "readiness_verdict": "ready",
+            "readiness_score": 96,
+            "is_publishable": True,
+            "needs_human_review": False,
+            "missing_fields": [],
+            "blocking_issues": [],
+        }
+    }
 
 
-# ---------------------------------------------------------------------------
-# merge_inputs tests
-# ---------------------------------------------------------------------------
-
-class TestMergeInputs:
-    """Test DPPGenerator.merge_inputs() user_input priority rule."""
-
-    def test_user_input_overrides_vision(self, generator):
-        """user_input values take priority over vision_output on conflict."""
-        vision = {"category": "electronics", "materials": ["plastic"]}
-        user = {"category": "textiles"}
-        merged = generator.merge_inputs(vision, user)
-        assert merged["category"] == "textiles", "user_input must win on conflict"
-
-    def test_vision_fills_missing_user_fields(self, generator):
-        """Fields in vision_output but not user_input are preserved."""
-        vision = {"category": "textiles", "colors": ["beige"]}
-        user = {"description": "Tote bag"}
-        merged = generator.merge_inputs(vision, user)
-        assert merged["colors"] == ["beige"], "Vision fields should be preserved"
-        assert merged["description"] == "Tote bag", "User fields should be preserved"
-
-    def test_empty_user_input(self, generator):
-        """Empty user_input returns vision_output unchanged."""
-        vision = {"category": "textiles", "materials": ["cotton"]}
-        merged = generator.merge_inputs(vision, {})
-        assert merged == vision
-
-    def test_empty_vision_output(self, generator):
-        """Empty vision_output returns user_input unchanged."""
-        user = {"description": "Cotton tote bag"}
-        merged = generator.merge_inputs({}, user)
-        assert merged == user
-
-    def test_all_fields_conflict(self, generator):
-        """When all fields conflict, user_input wins for all."""
-        vision = {"a": 1, "b": 2, "c": 3}
-        user = {"a": 10, "b": 20, "c": 30}
-        merged = generator.merge_inputs(vision, user)
-        assert merged == {"a": 10, "b": 20, "c": 30}
+@pytest.fixture
+def draft_audit_payload() -> dict:
+    return {
+        "assessment": {
+            "readiness_verdict": "ready_with_gaps",
+            "readiness_score": 61,
+            "is_publishable": False,
+            "needs_human_review": True,
+            "missing_fields": [
+                {
+                    "field": "operator_identifier",
+                    "severity": "required",
+                    "reason": "Responsible operator identifier is not verified.",
+                    "blocking": True,
+                }
+            ],
+            "blocking_issues": ["Responsible operator identifier is not verified."],
+        }
+    }
 
 
-# ---------------------------------------------------------------------------
-# Content hash tests
-# ---------------------------------------------------------------------------
-
-class TestContentHash:
-    """Test _compute_content_hash() determinism."""
-
-    def test_hash_is_deterministic(self, generator):
-        """Same input always produces same hash."""
-        subject = {"productName": "Test", "esprCategory": "textiles"}
-        hash1 = generator._compute_content_hash(subject)
-        hash2 = generator._compute_content_hash(subject)
-        assert hash1 == hash2
-
-    def test_hash_is_key_order_independent(self, generator):
-        """Hash is the same regardless of key insertion order."""
-        subject_a = {"productName": "Test", "esprCategory": "textiles"}
-        subject_b = {"esprCategory": "textiles", "productName": "Test"}
-        assert generator._compute_content_hash(subject_a) == generator._compute_content_hash(subject_b)
-
-    def test_hash_changes_with_content(self, generator):
-        """Different content produces different hashes."""
-        subject_a = {"productName": "Product A"}
-        subject_b = {"productName": "Product B"}
-        assert generator._compute_content_hash(subject_a) != generator._compute_content_hash(subject_b)
-
-    def test_hash_is_sha256_hex(self, generator):
-        """Hash is a 64-character lowercase hex string."""
-        subject = {"productName": "Test"}
-        hash_value = generator._compute_content_hash(subject)
-        assert len(hash_value) == 64
-        assert all(c in "0123456789abcdef" for c in hash_value)
+def _generate(
+    generator: DPPGenerator,
+    reconciled_textile_data: dict,
+    audit_payload: dict,
+    fixed_now: datetime,
+) -> dict:
+    return generator.generate_from_reconciled_state(
+        reconciled_domain_data=copy.deepcopy(reconciled_textile_data),
+        audit_payload=copy.deepcopy(audit_payload),
+        passport_id="demo-passport",
+        public_package_url="https://example.test/passports/demo-passport/passport.json",
+        qr_url="https://example.test/passports/demo-passport/qr.png",
+        now=fixed_now,
+    )
 
 
-# ---------------------------------------------------------------------------
-# JSON-LD wrapper tests
-# ---------------------------------------------------------------------------
-
-class TestBuildJsonldWrapper:
-    """Test _build_jsonld_wrapper() produces valid W3C VC structure."""
-
-    def test_required_fields_present(self, minimal_valid_passport):
-        """Wrapper includes all required W3C VC fields."""
-        required = ["@context", "id", "type", "issuer", "validFrom", "validUntil",
-                    "contentHash", "credentialSubject"]
-        for field in required:
-            assert field in minimal_valid_passport, f"Missing field: {field}"
-
-    def test_type_includes_verifiable_credential(self, minimal_valid_passport):
-        """type array must include VerifiableCredential."""
-        assert "VerifiableCredential" in minimal_valid_passport["type"]
-
-    def test_type_includes_dpp(self, minimal_valid_passport):
-        """type array must include DigitalProductPassport."""
-        assert "DigitalProductPassport" in minimal_valid_passport["type"]
-
-    def test_content_hash_format(self, minimal_valid_passport):
-        """contentHash matches sha256: prefix + 64 hex chars."""
-        import re
-        assert re.match(r"^sha256:[a-f0-9]{64}$", minimal_valid_passport["contentHash"])
-
-    def test_context_includes_w3c_vc(self, minimal_valid_passport):
-        """@context includes the W3C credentials v2 URI."""
-        contexts = minimal_valid_passport["@context"]
-        assert any("credentials/v2" in str(c) for c in contexts)
+def _dpp_payload(passport: dict) -> dict:
+    return passport["credentialSubject"]["dpp"]["dpp"]
 
 
-# ---------------------------------------------------------------------------
-# Validation tests
-# ---------------------------------------------------------------------------
+class TestGenerateFromReconciledState:
+    def test_generates_vc_from_reconciled_state(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        dpp = _dpp_payload(passport)
+
+        assert passport["@context"][0] == "https://www.w3.org/ns/credentials/v2"
+        assert passport["type"] == [
+            "VerifiableCredential",
+            "DigitalProductPassportCredential",
+        ]
+        assert passport["id"] == "did:web:passportai.example.com:passports:demo-passport"
+        assert passport["validFrom"] == "2026-04-27T12:30:00Z"
+        assert passport["validUntil"] == "2036-04-24T12:30:00Z"
+
+        assert dpp["passportId"] == "demo-passport"
+        assert dpp["productGroup"] == "textiles"
+        assert "sectoralTextile" in dpp
+        assert "sectoralBattery" not in dpp
+        assert "sectoralElectricalAppliance" not in dpp
+
+        product_identity = dpp["regulatedCore"]["productIdentity"]
+        assert product_identity["productName"] == "Canvas Tote Bag"
+        assert product_identity["brandName"] == "PassportAI Demo"
+        assert product_identity["esprCategory"] == "textiles"
+
+    def test_does_not_mutate_reconciled_input(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        before = copy.deepcopy(reconciled_textile_data)
+        _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        assert reconciled_textile_data == before
+
+    def test_rejects_invalid_reconciled_contract(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        broken = copy.deepcopy(reconciled_textile_data)
+        broken["sectoral"]["batteries"] = {}
+
+        with pytest.raises(ValueError, match="exactly one non-null sectoral block"):
+            generator.generate_from_reconciled_state(
+                reconciled_domain_data=broken,
+                audit_payload=ready_audit_payload,
+                passport_id="demo-passport",
+                now=fixed_now,
+            )
+
+
+class TestDraftVsIssuedBehavior:
+    def test_ready_publishable_audit_creates_issued_status(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        dpp = _dpp_payload(passport)
+
+        assert dpp["regulatedCore"]["passportIdentity"]["status"] == "issued"
+        assert dpp["systemMetadata"]["platform"]["humanReviewStatus"] == "approved"
+        assert dpp["systemMetadata"]["qualityAssessment"]["readinessScore"] == 96
+
+    def test_non_publishable_audit_creates_draft_status(
+        self,
+        generator,
+        reconciled_textile_data,
+        draft_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, draft_audit_payload, fixed_now)
+        dpp = _dpp_payload(passport)
+
+        assert dpp["regulatedCore"]["passportIdentity"]["status"] == "draft"
+        assert dpp["systemMetadata"]["platform"]["humanReviewStatus"] == "not_reviewed"
+        missing = dpp["systemMetadata"]["qualityAssessment"]["missingFields"]
+        assert missing == [
+            {
+                "field": "operator_identifier",
+                "severity": "required",
+                "action": None,
+                "regulatoryBasis": None,
+                "deadline": None,
+            }
+        ]
+
+
+class TestDerivationAndHash:
+    def test_derivation_trace_is_present_and_agent_scoped(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        trace = _dpp_payload(passport)["systemMetadata"]["derivationTrace"]
+
+        assert trace
+        assert all(set(item) == {"targetField", "sourcePath", "sourceAgent", "transformation"} for item in trace)
+        assert {item["sourceAgent"] for item in trace} >= {
+            "RegulatoryConsultant",
+            "GS1Specialist",
+            "LegalAgent",
+            "VisionAgent",
+        }
+
+    def test_content_hash_is_deterministic_and_key_order_independent(self, generator):
+        payload_a = {"b": 2, "a": {"x": 1}}
+        payload_b = {"a": {"x": 1}, "b": 2}
+
+        assert generator._compute_content_hash(payload_a) == generator._compute_content_hash(payload_b)
+        assert len(generator._compute_content_hash(payload_a)) == 64
+
 
 class TestValidate:
-    """Test DPPGenerator.validate() catches structural issues."""
+    def test_valid_generated_passport_passes(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
 
-    def test_valid_passport_passes(self, generator, minimal_valid_passport):
-        """A well-formed passport passes validation."""
-        valid, errors = generator.validate(minimal_valid_passport)
-        assert valid is True, f"Expected valid, got errors: {errors}"
+        valid, errors = generator.validate(passport)
+
+        assert valid is True
         assert errors == []
 
-    def test_missing_context_fails(self, generator, minimal_valid_passport):
-        """Passport without @context fails validation."""
-        del minimal_valid_passport["@context"]
-        valid, errors = generator.validate(minimal_valid_passport)
+    def test_missing_context_fails(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        del passport["@context"]
+
+        valid, errors = generator.validate(passport)
+
         assert valid is False
-        assert any("@context" in e for e in errors)
+        assert "Missing required field: @context" in errors
 
-    def test_missing_credential_subject_fails(self, generator, minimal_valid_passport):
-        """Passport without credentialSubject fails validation."""
-        del minimal_valid_passport["credentialSubject"]
-        valid, errors = generator.validate(minimal_valid_passport)
+    def test_missing_credential_subject_fails(self, generator):
+        valid, errors = generator.validate(
+            {
+                "@context": ["https://www.w3.org/ns/credentials/v2"],
+                "id": "did:web:passportai.example.com:passports:x",
+                "type": ["VerifiableCredential", "DigitalProductPassportCredential"],
+                "issuer": {"id": "did:web:passportai.example.com"},
+                "validFrom": "2026-04-27T00:00:00Z",
+            }
+        )
+
         assert valid is False
-        assert any("credentialSubject" in e for e in errors)
+        assert "Missing required field: credentialSubject" in errors
+        assert "credentialSubject must be a dict" in errors
 
-    def test_missing_type_fails(self, generator, minimal_valid_passport):
-        """Passport without VerifiableCredential in type fails."""
-        minimal_valid_passport["type"] = ["SomeOtherType"]
-        valid, errors = generator.validate(minimal_valid_passport)
+    def test_sector_block_must_match_product_group(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        dpp = _dpp_payload(passport)
+        dpp["sectoralBattery"] = dpp.pop("sectoralTextile")
+
+        valid, errors = generator.validate(passport)
+
         assert valid is False
+        assert "Exactly one sectoral DPP block must be present" not in errors
+        assert any("does not match sectoral block" in error for error in errors)
 
-    def test_empty_passport_fails(self, generator):
-        """Empty dict fails validation with multiple errors."""
-        valid, errors = generator.validate({})
+
+class TestValidateWithJsonschema:
+    def test_validate_with_jsonschema_success(
+        self,
+        tmp_path,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        (schemas_dir / "universal_dpp.schema.json").write_text(
+            """
+            {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "required": ["@context", "type", "credentialSubject"],
+              "properties": {
+                "@context": {"type": "array"},
+                "type": {"type": "array", "contains": {"const": "VerifiableCredential"}},
+                "credentialSubject": {"type": "object"}
+              }
+            }
+            """,
+            encoding="utf-8",
+        )
+        generator = DPPGenerator(client=None, schemas_dir=schemas_dir)
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+
+        valid, errors = generator.validate_with_jsonschema(passport)
+
+        assert valid is True
+        assert errors == []
+
+    def test_validate_with_jsonschema_reports_schema_errors(self, tmp_path):
+        schemas_dir = tmp_path / "schemas"
+        schemas_dir.mkdir()
+        (schemas_dir / "universal_dpp.schema.json").write_text(
+            """
+            {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "required": ["credentialSubject"]
+            }
+            """,
+            encoding="utf-8",
+        )
+        generator = DPPGenerator(client=None, schemas_dir=schemas_dir)
+
+        valid, errors = generator.validate_with_jsonschema({"@context": []})
+
         assert valid is False
-        assert len(errors) > 0
+        assert any("credentialSubject" in error for error in errors)
+
+    def test_validate_with_jsonschema_missing_schema_file_fails(self, tmp_path):
+        generator = DPPGenerator(client=None, schemas_dir=tmp_path)
+
+        valid, errors = generator.validate_with_jsonschema({})
+
+        assert valid is False
+        assert any("JSON Schema file not found" in error for error in errors)
 
 
-# ---------------------------------------------------------------------------
-# Integration tests (require Ollama)
-# ---------------------------------------------------------------------------
+class TestDeprecatedEntrypoints:
+    def test_old_generator_first_entrypoints_remain_blocked(self, generator):
+        with pytest.raises(RuntimeError, match="deprecated"):
+            generator.generate_from_text("Cotton tote bag")
 
-@pytest.mark.skipif(
-    True,  # Always skip until implemented
-    reason="Requires Ollama with gemma4:e4b — set SKIP_OLLAMA_TESTS=false"
-)
-class TestGenerateFromText:
-    """Integration tests requiring a running Ollama server."""
+        with pytest.raises(RuntimeError, match="deprecated"):
+            generator.generate_from_photo_and_text("image.png", "Cotton tote bag")
 
-    def test_generate_returns_passport(self):
-        """generate_from_text() returns a valid passport dict."""
-        # from src.core.gemma_client import GemmaClient
-        # from src.core.dpp_generator import DPPGenerator
-        # client = GemmaClient()
-        # gen = DPPGenerator(client)
-        # passport = gen.generate_from_text("Cotton tote bag, made in Ukraine")
-        # assert "@context" in passport
-        # assert "credentialSubject" in passport
-        pytest.skip("Not yet implemented")
+        with pytest.raises(RuntimeError, match="deprecated"):
+            generator.merge_inputs({"category": "textiles"}, {"description": "bag"})
