@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -8,17 +9,29 @@ from src.storage.base import StorageProvider
 
 
 class _DummyStorage(StorageProvider):
+    def __init__(self, output_dir: Path | None = None):
+        self.output_dir = output_dir
+        self.saved_files: dict[str, dict[str, Path]] = {}
+
     def save_package(self, passport_id: str, files: dict[str, Path]) -> str:
+        self.saved_files[passport_id] = dict(files)
         return f"http://example.test/{passport_id}"
 
     def get_public_url(self, passport_id: str, filename: str) -> str:
         return f"http://example.test/{passport_id}/{filename}"
 
     def file_exists(self, passport_id: str, filename: str) -> bool:
-        return False
+        if self.output_dir is None:
+            return False
+        return (self.output_dir / passport_id / filename).exists()
 
     def delete_package(self, passport_id: str) -> None:
         return None
+
+    def get_package_dir(self, passport_id: str) -> Path:
+        if self.output_dir is None:
+            raise RuntimeError("output_dir is required for artifact-writing tests")
+        return self.output_dir / passport_id
 
 
 class _StubVisionAgent:
@@ -275,6 +288,42 @@ class _StubAuditAgent:
         }
 
 
+class _StubDPPGenerator:
+    def __init__(self, *, validation_errors: list[str] | None = None):
+        self.validation_errors = validation_errors or []
+        self.last_kwargs = None
+
+    def generate_from_reconciled_state(self, **kwargs):
+        self.last_kwargs = kwargs
+        passport_id = kwargs["passport_id"]
+        product_group = kwargs["reconciled_domain_data"]["espr_core"]["product_group"]
+        return {
+            "@context": ["https://www.w3.org/ns/credentials/v2"],
+            "id": f"did:web:passportai.example.com:passports:{passport_id}",
+            "type": ["VerifiableCredential", "DigitalProductPassportCredential"],
+            "issuer": {"id": "did:web:passportai.example.com", "name": "PassportAI"},
+            "validFrom": "2026-04-27T00:00:00Z",
+            "credentialSubject": {
+                "id": f"did:web:passportai.example.com:products:{passport_id}",
+                "dpp": {
+                    "dpp": {
+                        "passportId": passport_id,
+                        "productGroup": product_group,
+                        "regulatedCore": {
+                            "productIdentity": {"esprCategory": product_group}
+                        },
+                        "sectoralTextile": {},
+                    }
+                },
+            },
+        }
+
+    def validate(self, passport):
+        if self.validation_errors:
+            return False, list(self.validation_errors)
+        return True, []
+
+
 def test_pipeline_runs_reconciled_audit_flow_without_dpp_generator(tmp_path):
     image_path = tmp_path / "product.jpg"
     image_path.write_bytes(b"fake-image")
@@ -349,3 +398,88 @@ def test_pipeline_blocks_on_failed_regulatory_payload(tmp_path):
     assert result.success is False
     assert result.reconciled_domain_data is None
     assert any("RegulatoryConsultant did not return a usable success payload" in err for err in result.errors)
+
+def test_pipeline_packages_dpp_from_reconciled_state(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _DummyStorage(output_dir=tmp_path / "output")
+    dpp_generator = _StubDPPGenerator()
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+        },
+        storage=storage,
+    )
+
+    result = pipeline.run(
+        image_path=image_path,
+        description="photo-only textile product",
+        user_inputs={"brand_name": "User Brand"},
+    )
+
+    assert result.success is True
+    assert result.passport_json is not None
+    assert result.package_url == f"http://example.test/{result.passport_id}"
+
+    artifact_path = result.artifact_paths["passport.json"]
+    assert artifact_path == tmp_path / "output" / result.passport_id / "passport.json"
+    assert artifact_path.exists()
+    assert json.loads(artifact_path.read_text(encoding="utf-8")) == result.passport_json
+    assert storage.saved_files[result.passport_id] == {"passport.json": artifact_path}
+
+    assert dpp_generator.last_kwargs is not None
+    assert dpp_generator.last_kwargs["reconciled_domain_data"] == result.reconciled_domain_data
+    assert dpp_generator.last_kwargs["audit_payload"]["assessment"]["readiness_verdict"] == "ready"
+    assert dpp_generator.last_kwargs["passport_id"] == result.passport_id
+    assert dpp_generator.last_kwargs["public_package_url"].endswith("/passport.json")
+
+    raw_agent_fields = {
+        "vision_result",
+        "regulatory_result",
+        "legal_result",
+        "lca_result",
+        "gs1_result",
+        "agent_outputs",
+        "passport_json",
+    }
+    assert raw_agent_fields.isdisjoint(dpp_generator.last_kwargs)
+
+
+def test_pipeline_fails_closed_when_dpp_validation_fails(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _DummyStorage(output_dir=tmp_path / "output")
+    dpp_generator = _StubDPPGenerator(validation_errors=["missing credentialSubject"])
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+        },
+        storage=storage,
+    )
+
+    result = pipeline.run(image_path=image_path)
+
+    assert result.success is False
+    assert result.passport_json is None
+    assert "passport.json" not in result.artifact_paths
+    assert result.package_url is None
+    assert storage.saved_files == {}
+    assert not (tmp_path / "output" / result.passport_id / "passport.json").exists()
+    assert any("DPPGenerator validation failed" in err for err in result.errors)
+
