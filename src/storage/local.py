@@ -122,6 +122,7 @@ class LocalStorage(StorageProvider):
             "passport.json": "",
             "photo.png": "/photo",
             "passport.html": "/html",
+            "gap_report.html": "/gap-report",
             "gap_report.pdf": "/gap-report",
             "qr.png": "/qr",
         }

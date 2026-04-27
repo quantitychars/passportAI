@@ -323,6 +323,26 @@ class _StubDPPGenerator:
             return False, list(self.validation_errors)
         return True, []
 
+class _StubGapReportGenerator:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.last_kwargs = None
+
+    def generate(self, **kwargs):
+        self.last_kwargs = kwargs
+        if self.fail:
+            raise RuntimeError("gap report failed")
+
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        report_path = output_dir / "gap_report.html"
+        report_path.write_text(
+            "<html><body>Gap report</body></html>",
+            encoding="utf-8",
+        )
+        return report_path
+    
 
 def test_pipeline_runs_reconciled_audit_flow_without_dpp_generator(tmp_path):
     image_path = tmp_path / "product.jpg"
@@ -452,6 +472,67 @@ def test_pipeline_packages_dpp_from_reconciled_state(tmp_path):
     }
     assert raw_agent_fields.isdisjoint(dpp_generator.last_kwargs)
 
+def test_pipeline_generates_gap_report_from_audit_result(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _DummyStorage(output_dir=tmp_path / "output")
+    dpp_generator = _StubDPPGenerator()
+    gap_report_generator = _StubGapReportGenerator()
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+            "gap_report": gap_report_generator,
+        },
+        storage=storage,
+    )
+
+    result = pipeline.run(
+        image_path=image_path,
+        description="photo-only textile product",
+        user_inputs={"brand_name": "User Brand"},
+    )
+
+    assert result.success is True
+    assert result.passport_json is not None
+    assert result.package_url == f"http://example.test/{result.passport_id}"
+
+    passport_path = result.artifact_paths["passport.json"]
+    gap_report_path = result.artifact_paths["gap_report.html"]
+
+    assert passport_path.exists()
+    assert gap_report_path == tmp_path / "output" / result.passport_id / "gap_report.html"
+    assert gap_report_path.exists()
+    assert result.artifact_paths["gap_report.html"] == gap_report_path
+
+    assert gap_report_generator.last_kwargs is not None
+    assert gap_report_generator.last_kwargs["audit_result"] == result.agent_outputs["audit"]
+    assert gap_report_generator.last_kwargs["passport_id"] == result.passport_id
+    assert gap_report_generator.last_kwargs["output_dir"] == tmp_path / "output" / result.passport_id
+
+    forbidden_gap_report_inputs = {
+        "passport_json",
+        "reconciled_domain_data",
+        "vision_result",
+        "regulatory_result",
+        "legal_result",
+        "lca_result",
+        "gs1_result",
+        "agent_outputs",
+    }
+    assert forbidden_gap_report_inputs.isdisjoint(gap_report_generator.last_kwargs)
+
+    assert storage.saved_files[result.passport_id] == {
+        "passport.json": passport_path,
+        "gap_report.html": gap_report_path,
+    }
 
 def test_pipeline_fails_closed_when_dpp_validation_fails(tmp_path):
     image_path = tmp_path / "product.jpg"

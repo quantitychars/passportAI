@@ -129,6 +129,8 @@ class PassportPipeline:
             self._run_generation_step(state)
             self._run_review_step(state)
             self._run_packaging_step(state)
+            self._run_gap_report_step(state)
+            self._publish_artifact_package(state)
         except Exception as exc:
             state.errors.append(f"{type(exc).__name__}: {exc}")
 
@@ -297,14 +299,44 @@ class PassportPipeline:
             passport_id=state.passport_id,
             passport_json=passport_json,
         )
-        package_url = self.storage.save_package(
-            state.passport_id,
-            {"passport.json": artifact_path},
-        )
 
         state.passport_json = passport_json
         state.artifact_paths["passport.json"] = artifact_path
-        state.package_url = package_url
+    
+    def _run_gap_report_step(self, state: PipelineState) -> None:
+        """Step 5: render a human-readable remediation report from audit output.
+
+        Invariants:
+        - GapReportGenerator consumes DataAuditAgent output only.
+        - It must not read passport_json or raw agent outputs.
+        - The report is an artifact projection, not a second auditor.
+        """
+        gap_report_generator = self.agents.get("gap_report")
+        if gap_report_generator is None:
+            return
+
+        if state.audit_result is None:
+            raise RuntimeError("audit_result is missing before gap report step.")
+
+        report_path = gap_report_generator.generate(
+            audit_result=state.audit_result,
+            output_dir=self._get_package_dir(state.passport_id),
+            passport_id=state.passport_id,
+        )
+
+        state.gap_report_path = report_path
+        state.artifact_paths["gap_report.html"] = report_path
+
+
+    def _publish_artifact_package(self, state: PipelineState) -> None:
+        """Save the package once all configured artifact renderers have succeeded."""
+        if not state.artifact_paths:
+            return
+
+        state.package_url = self.storage.save_package(
+            state.passport_id,
+            dict(state.artifact_paths),
+        )
 
     def _build_reconciled_domain_data(self, state: PipelineState) -> dict[str, Any]:
         """Build one final domain snapshot from boundary-clean agent outputs.
@@ -456,7 +488,12 @@ class PassportPipeline:
                     selected_group, {}
                 ).update(selected_patch)
 
-
+    def _get_package_dir(self, passport_id: str) -> Path:
+        get_package_dir = getattr(self.storage, "get_package_dir", None)
+        if callable(get_package_dir):
+            return Path(get_package_dir(passport_id))
+        return Path("output") / passport_id
+    
     def _write_passport_json_artifact(
         self,
         *,
@@ -464,13 +501,10 @@ class PassportPipeline:
         passport_json: dict[str, Any],
     ) -> Path:
         """Persist generated DPP JSON to a deterministic local path."""
-        get_package_dir = getattr(self.storage, "get_package_dir", None)
-        if callable(get_package_dir):
-            package_dir = Path(get_package_dir(passport_id))
-        else:
-            package_dir = Path("output") / passport_id
-
+        
+        package_dir = self._get_package_dir(passport_id)
         package_dir.mkdir(parents=True, exist_ok=True)
+
         artifact_path = package_dir / "passport.json"
         artifact_path.write_text(
             json.dumps(passport_json, ensure_ascii=False, indent=2, sort_keys=True),
