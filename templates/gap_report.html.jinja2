@@ -1,172 +1,293 @@
-<!DOCTYPE html>
-{# templates/gap_report.html.jinja2 — Compliance Gap Report HTML template #}
-{# Variables: product_name, espr_category, readiness_score, score_breakdown, #}
-{#            missing_essential, missing_recommended, inconsistencies, #}
-{#            compliance_flags, recommended_actions, generated_at #}
+{# templates/gap_report.html.jinja2 — human-readable DataAuditAgent report #}
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>DPP Compliance Gap Report — {{ product_name }}</title>
+  <meta charset="utf-8">
+  <title>PassportAI Gap Report — {{ product_context.product_name }}</title>
   <style>
-    @page { size: A4; margin: 2cm 2.5cm; }
-    * { box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; line-height: 1.5; }
-    h1 { font-size: 18pt; color: #1a56db; margin-bottom: 4pt; }
-    h2 { font-size: 12pt; color: #1a56db; margin: 16pt 0 6pt; border-bottom: 1pt solid #d1d5db; padding-bottom: 3pt; }
-    h3 { font-size: 10pt; color: #374151; margin: 10pt 0 4pt; }
-    .header-block { margin-bottom: 16pt; }
-    .meta { color: #6b7280; font-size: 9pt; }
-    .score-box {
-      border: 2pt solid #1a56db;
-      padding: 12pt;
-      border-radius: 6pt;
-      display: inline-block;
-      margin: 8pt 0;
+    :root {
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --panel: #f9fafb;
+      --red: #991b1b;
+      --red-bg: #fef2f2;
+      --amber: #92400e;
+      --amber-bg: #fffbeb;
+      --green: #065f46;
+      --green-bg: #ecfdf5;
+      --blue: #1e3a8a;
+      --blue-bg: #eff6ff;
     }
-    .score-number { font-size: 28pt; font-weight: bold; color: #1a56db; }
-    .score-label { font-size: 9pt; color: #6b7280; }
-    .progress-bar-bg { background: #e5e7eb; height: 10pt; border-radius: 5pt; overflow: hidden; margin: 4pt 0; }
-    .progress-bar { height: 10pt; border-radius: 5pt; }
-    table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9pt; }
-    th { background: #f3f4f6; text-align: left; padding: 5pt 8pt; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.4pt; border: 1pt solid #e5e7eb; }
-    td { padding: 5pt 8pt; border: 1pt solid #e5e7eb; vertical-align: top; }
-    tr:nth-child(even) td { background: #f9fafb; }
-    .badge { display: inline-block; padding: 1pt 5pt; border-radius: 3pt; font-size: 8pt; font-weight: bold; }
-    .badge-red { background: #fee2e2; color: #991b1b; }
-    .badge-yellow { background: #fef3c7; color: #92400e; }
-    .badge-green { background: #d1fae5; color: #065f46; }
-    .badge-gray { background: #f3f4f6; color: #374151; }
-    .alert { padding: 8pt; border-left: 3pt solid; margin: 8pt 0; border-radius: 0 4pt 4pt 0; font-size: 9pt; }
-    .alert-red { border-color: #e02424; background: #fff5f5; }
-    .alert-yellow { border-color: #c27803; background: #fffbeb; }
-    .alert-green { border-color: #0e9f6e; background: #f0fdf4; }
-    .footer { margin-top: 24pt; padding-top: 8pt; border-top: 1pt solid #e5e7eb; font-size: 8pt; color: #9ca3af; }
-    .page-break { page-break-before: always; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px;
+      color: var(--ink);
+      background: #ffffff;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      line-height: 1.48;
+    }
+    .page { max-width: 1080px; margin: 0 auto; }
+    .hero {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      margin-bottom: 22px;
+    }
+    h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -0.04em; }
+    h2 { margin: 28px 0 12px; font-size: 22px; letter-spacing: -0.02em; }
+    h3 { margin: 0 0 8px; font-size: 16px; }
+    p { margin: 0 0 10px; }
+    .muted { color: var(--muted); }
+    .meta { color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #ffffff;
+    }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    .score { font-size: 46px; font-weight: 800; letter-spacing: -0.05em; }
+    .status {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .status-red { color: var(--red); background: var(--red-bg); }
+    .status-amber { color: var(--amber); background: var(--amber-bg); }
+    .status-green { color: var(--green); background: var(--green-bg); }
+    .banner {
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin: 14px 0;
+      border: 1px solid;
+    }
+    .banner-red { color: var(--red); background: var(--red-bg); border-color: #fecaca; }
+    .banner-amber { color: var(--amber); background: var(--amber-bg); border-color: #fde68a; }
+    .banner-green { color: var(--green); background: var(--green-bg); border-color: #a7f3d0; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; font-size: 14px; }
+    th, td { border-top: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+    th { background: var(--panel); font-size: 12px; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; }
+    code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
+    .pill { display: inline-block; padding: 3px 8px; border-radius: 999px; background: var(--panel); font-size: 12px; font-weight: 650; color: #374151; }
+    .pill-red { color: var(--red); background: var(--red-bg); }
+    .pill-amber { color: var(--amber); background: var(--amber-bg); }
+    .pill-blue { color: var(--blue); background: var(--blue-bg); }
+    .small { font-size: 13px; }
+    .empty { color: var(--muted); padding: 12px 0; }
+    .footer { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 12px; }
+    ul { margin-top: 6px; }
+    @media print {
+      body { padding: 18px; }
+      .card, .hero, .banner { break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
+<div class="page">
+  <section class="hero">
+    <h1>PassportAI Gap Report</h1>
+    <p class="muted">Human-readable remediation plan generated from <strong>{{ audit_metadata.source }}</strong>. This is not a legal certification and requires human review before official publication.</p>
+    <p class="meta">Schema {{ schema_version }} · Generated {{ generated_at }} · Passport ID {{ product_context.passport_id }}</p>
+  </section>
 
-{# Cover / Header #}
-<div class="header-block">
-  <h1>DPP Compliance Gap Report</h1>
-  <p class="meta">Product: <strong>{{ product_name }}</strong> &nbsp;|&nbsp; Category: <strong>{{ espr_category | upper }}</strong> &nbsp;|&nbsp; Generated: {{ generated_at }}</p>
-  <p class="meta">Generated by PassportAI v1.0 using Gemma 4 12B · This report is AI-generated and requires human review before official use.</p>
-</div>
-
-{# Executive Summary #}
-<h2>Executive Summary</h2>
-<div class="grid-2">
-  <div>
-    <div class="score-box">
-      <div class="score-number">{{ readiness_score }}</div>
-      <div class="score-label">/ 100 — DPP Readiness Score</div>
+  <section class="grid">
+    <div class="card span-8">
+      <h3>Product context</h3>
+      <table>
+        <tbody>
+          <tr><th>Product</th><td>{{ product_context.product_name }}</td></tr>
+          <tr><th>Brand / model</th><td>{{ product_context.brand_name }} / {{ product_context.model_name }}</td></tr>
+          <tr><th>Product group</th><td>{{ product_context.product_group }}</td></tr>
+          <tr><th>ESPR category</th><td>{{ product_context.espr_category }}</td></tr>
+          <tr><th>Sector profile</th><td>{{ product_context.sector_profile }}</td></tr>
+        </tbody>
+      </table>
     </div>
-    <p style="font-size:9pt; margin-top:4pt; color:#374151">
-      {% if readiness_score >= 75 %}
-        <strong style="color:#065f46">Ready for EU market submission.</strong> Minor gaps remain.
-      {% elif readiness_score >= 50 %}
-        <strong style="color:#92400e">Attention required.</strong> Address high-priority gaps before submission.
+    <div class="card span-4">
+      <h3>Readiness</h3>
+      <div class="score">{{ readiness.score }}</div>
+      <p class="muted">/ 100 readiness score</p>
+      {% if readiness.is_publishable %}
+        <span class="status status-green">Publishable</span>
+      {% elif publication_blockers.has_blockers %}
+        <span class="status status-red">Publication blocked</span>
       {% else %}
-        <strong style="color:#991b1b">Not ready.</strong> Critical information missing. Substantial work required.
+        <span class="status status-amber">Draft only</span>
       {% endif %}
-    </p>
-  </div>
-  <div>
-    <h3>Score Breakdown</h3>
-    {% for label, value, max_val in [
-      ('Essential Fields', score_breakdown.essential_fields, 60),
-      ('Recommended Fields', score_breakdown.recommended_fields, 25),
-      ('Documents Attached', score_breakdown.documents_attached, 10),
-      ('Photo Standardized', score_breakdown.photo_standardized, 5)
-    ] %}
-    <div style="margin-bottom:4pt">
-      <div style="display:flex; justify-content:space-between; font-size:8pt">
-        <span>{{ label }}</span><span>{{ value }}/{{ max_val }}</span>
-      </div>
-      <div class="progress-bar-bg">
-        <div class="progress-bar" style="width:{{ (value / max_val * 100) | int }}%; background: {{ '#0e9f6e' if (value/max_val) > 0.7 else ('#c27803' if (value/max_val) > 0.4 else '#e02424') }};"></div>
-      </div>
+      <p style="margin-top:12px"><strong>Verdict:</strong> {{ readiness.verdict_label }}</p>
+      <p><strong>Human review:</strong> {{ "required" if readiness.needs_human_review else "not flagged" }}</p>
     </div>
-    {% endfor %}
+  </section>
+
+  {% if publication_blockers.has_blockers %}
+    <div class="banner banner-red">
+      <strong>Publication is blocked until the issues below are resolved.</strong>
+      <div class="small">The report fails closed: weak, missing, or contradictory evidence is not converted into publishable product truth.</div>
+    </div>
+  {% else %}
+    <div class="banner banner-green">
+      <strong>No publication blockers were reported by the audit.</strong>
+      <div class="small">Recommended gaps may still be worth closing before submission.</div>
+    </div>
+  {% endif %}
+
+  <section class="grid">
+    <div class="card span-12">
+      <h3>Audit summary</h3>
+      <p>{{ readiness.summary }}</p>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card span-3"><h3>Blocking</h3><p class="score" style="font-size:30px">{{ gap_counts.blocking }}</p></div>
+    <div class="card span-3"><h3>Missing</h3><p class="score" style="font-size:30px">{{ gap_counts.missing }}</p></div>
+    <div class="card span-3"><h3>Weak evidence</h3><p class="score" style="font-size:30px">{{ gap_counts.weak_evidence }}</p></div>
+    <div class="card span-3"><h3>Unverified</h3><p class="score" style="font-size:30px">{{ gap_counts.unverified }}</p></div>
+  </section>
+
+  {% if publication_blockers.blocking_issues or publication_blockers.contradictions %}
+  <h2>Publication blockers</h2>
+  {% for item in publication_blockers.blocking_issues %}
+    <div class="banner banner-red"><strong>Blocking issue:</strong> {{ item }}</div>
+  {% endfor %}
+  {% for item in publication_blockers.contradictions %}
+    <div class="banner banner-red"><strong>Contradiction:</strong> {{ item }}</div>
+  {% endfor %}
+  {% endif %}
+
+  {% macro gap_table(title, gaps, badge_class) -%}
+    <h2>{{ title }}</h2>
+    {% if gaps %}
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Current state</th>
+          <th>Why it matters</th>
+          <th>Where to get data</th>
+          <th>Closure condition</th>
+          <th>Owner</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for gap in gaps %}
+        <tr>
+          <td>
+            <code>{{ gap.field }}</code><br>
+            <span class="pill {{ badge_class }}">{{ gap.severity_label }}</span>
+            {% if gap.blocking %}<span class="pill pill-red">Blocking</span>{% endif %}
+          </td>
+          <td>
+            <strong>{{ gap.current_evidence_status | replace('_', ' ') }}</strong><br>
+            <span class="small">{{ gap.reason }}</span>
+          </td>
+          <td>{{ gap.why_it_matters }}</td>
+          <td>{{ gap.where_to_get_data }}</td>
+          <td>
+            {{ gap.closure_condition }}
+            {% if gap.acceptable_evidence %}
+              <br><span class="small muted">Acceptable evidence: {{ gap.acceptable_evidence | join(', ') }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ gap.owner_hint }}
+            {% if gap.requires_supplier_confirmation %}<br><span class="pill pill-blue">supplier confirmation</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="empty">No issues in this group.</p>
+    {% endif %}
+  {%- endmacro %}
+
+  {{ gap_table("1. Blocking gaps", gap_groups.blocking, "pill-red") }}
+  {{ gap_table("2. Missing required data", gap_groups.missing, "pill-red") }}
+  {{ gap_table("3. Weak evidence", gap_groups.weak_evidence, "pill-amber") }}
+  {{ gap_table("4. Present but unverified", gap_groups.unverified, "pill-amber") }}
+  {{ gap_table("5. Recommended improvements", gap_groups.recommended, "") }}
+
+  <h2>Action plan</h2>
+  {% if action_plan %}
+  <table>
+    <thead><tr><th>Priority</th><th>Owner</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for action in action_plan %}
+      <tr>
+        <td><span class="pill {{ 'pill-red' if action.priority == 'now' else ('pill-amber' if action.priority == 'soon' else '') }}">{{ action.priority_label }}</span></td>
+        <td>{{ action.owner }}</td>
+        <td>{{ action.action }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="empty">No action plan was provided by the audit.</p>
+  {% endif %}
+
+  <section class="grid">
+    <div class="card span-6">
+      <h2 style="margin-top:0">Supplier request pack</h2>
+      {% if supplier_requests %}
+        {% for request in supplier_requests %}
+          <p><strong>{{ request.request }}</strong><br><span class="small">{{ request.why_needed }}</span><br><span class="muted small">Document type: {{ request.document_type }}</span></p>
+        {% endfor %}
+      {% else %}
+        <p class="empty">No supplier-specific requests.</p>
+      {% endif %}
+    </div>
+    <div class="card span-6">
+      <h2 style="margin-top:0">Where to get missing data</h2>
+      {% if data_sources %}
+        {% for source in data_sources %}
+          <p><strong>{{ source.missing_topic }}</strong><br>{{ source.source }}<br><span class="muted small">{{ source.how_to_obtain }}</span></p>
+        {% endfor %}
+      {% else %}
+        <p class="empty">No data-source guidance was provided by the audit.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if business_risks %}
+  <h2>Business risks</h2>
+  {% for risk in business_risks %}
+    <div class="banner banner-amber">{{ risk }}</div>
+  {% endfor %}
+  {% endif %}
+
+  {% if warnings or assumptions %}
+  <h2>Audit notes</h2>
+  <section class="grid">
+    <div class="card span-6">
+      <h3>Warnings</h3>
+      {% if warnings %}<ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}<p class="empty">No warnings.</p>{% endif %}
+    </div>
+    <div class="card span-6">
+      <h3>Assumptions</h3>
+      {% if assumptions %}<ul>{% for assumption in assumptions %}<li>{{ assumption }}</li>{% endfor %}</ul>{% else %}<p class="empty">No assumptions.</p>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="footer">
+    <strong>Boundary statement:</strong>
+    raw agent outputs included = {{ audit_metadata.raw_agent_outputs_included }};
+    DPP JSON used as source = {{ audit_metadata.dpp_json_used_as_source }}.
+    Product facts and audit semantics come from DataAuditAgent output only.
   </div>
 </div>
-
-{# Critical Gaps #}
-{% if missing_essential %}
-<h2>Critical Gaps (Essential Fields Missing)</h2>
-<div class="alert alert-red">
-  <strong>{{ missing_essential | length }} essential field(s) missing.</strong>
-  These fields are required before the passport can be submitted to EU authorities.
-</div>
-<table>
-  <thead><tr><th>Field</th><th>Why Required</th><th>ESPR Deadline</th><th>Priority</th></tr></thead>
-  <tbody>
-  {% for field in missing_essential %}
-  <tr>
-    <td><code>{{ field }}</code></td>
-    <td>Required for all ESPR DPP submissions</td>
-    <td>2027-01-01</td>
-    <td><span class="badge badge-red">CRITICAL</span></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-{# Recommended Fields #}
-{% if missing_recommended %}
-<h2>Recommended Fields</h2>
-<table>
-  <thead><tr><th>Field</th><th>Benefit</th><th>Priority</th></tr></thead>
-  <tbody>
-  {% for field in missing_recommended %}
-  <tr>
-    <td><code>{{ field }}</code></td>
-    <td>Improves market readiness and buyer confidence</td>
-    <td><span class="badge badge-yellow">RECOMMENDED</span></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-{# Inconsistencies #}
-{% if inconsistencies %}
-<h2>Data Inconsistencies</h2>
-{% for issue in inconsistencies %}
-<div class="alert alert-yellow">{{ issue }}</div>
-{% endfor %}
-{% endif %}
-
-{# Recommended Actions #}
-{% if recommended_actions %}
-<h2>Recommended Actions</h2>
-<table>
-  <thead><tr><th>#</th><th>Action</th><th>Effort</th><th>Cost</th></tr></thead>
-  <tbody>
-  {% for action in recommended_actions %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td>
-      <strong>{{ action.action }}</strong>
-      {% if action.how_to %}<br><span style="color:#6b7280">{{ action.how_to }}</span>{% endif %}
-    </td>
-    <td>{{ action.estimated_effort or '—' }}</td>
-    <td>{{ action.cost_estimate or '—' }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-{# Footer #}
-<div class="footer">
-  <strong>PassportAI</strong> — ESPR Digital Product Passport Generator &nbsp;|&nbsp;
-  Generated using Gemma 4 12B Q4_K_M (100% offline) &nbsp;|&nbsp;
-  License: CC-BY 4.0 &nbsp;|&nbsp;
-  <em>AI-generated report. Consult a qualified compliance professional for official submissions.</em>
-</div>
-
 </body>
 </html>
