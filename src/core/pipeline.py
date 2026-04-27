@@ -156,6 +156,7 @@ class PassportPipeline:
             product_group_hint=state.product_group_hint,
             image_url=str(state.image_path),
             sufficient_visual_evidence=True,
+            description=state.description,
         )
         state.vision_result = result
         state.agent_outputs["vision"] = result
@@ -501,7 +502,7 @@ class PassportPipeline:
         passport_json: dict[str, Any],
     ) -> Path:
         """Persist generated DPP JSON to a deterministic local path."""
-        
+
         package_dir = self._get_package_dir(passport_id)
         package_dir.mkdir(parents=True, exist_ok=True)
 

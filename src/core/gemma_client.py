@@ -232,6 +232,7 @@ class GemmaClient:
         messages: list[ChatMessage],
         options: dict[str, Any],
         tools: list[dict] | None = None,
+        response_format: str | dict[str, Any] | None = None,
     ) -> str | dict:
         """Call Ollama chat API with retry logic and exponential backoff.
 
@@ -264,6 +265,9 @@ class GemmaClient:
                 }
                 if tools is not None:
                     chat_kwargs["tools"] = tools
+
+                if response_format is not None:
+                    chat_kwargs["format"] = response_format
 
                 response: Any = self._client.chat(**chat_kwargs)
                 return self._process_chat_response(response)
@@ -421,9 +425,63 @@ class GemmaClient:
         messages: list[ChatMessage] = [
             ChatMessage(role="user", content=clean_prompt, images=[image_data])
         ]
+        vision_response_schema: dict[str, Any] = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "textiles",
+                        "batteries",
+                        "electrical_appliances",
+                        "unknown",
+                    ],
+                },
+                "product_type": {
+                    "type": "string",
+                },
+                "materials": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "colors": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "certifications_visible": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "special_markings": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                },
+            },
+            "required": [
+                "category",
+                "product_type",
+                "materials",
+                "colors",
+                "certifications_visible",
+                "special_markings",
+                "confidence",
+            ],
+        }
+
         return self._chat_with_retry(
             messages=messages,
-            options={"temperature": 0.2},
+            options={
+                "temperature": 0.0,
+                "num_ctx": 1024,
+                "num_predict": 900,
+            },
+            response_format=vision_response_schema,
         )
 
     def call_tool(

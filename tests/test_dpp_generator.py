@@ -143,7 +143,7 @@ def _generate(
 
 
 def _dpp_payload(passport: dict) -> dict:
-    return passport["credentialSubject"]["dpp"]["dpp"]
+    return passport["credentialSubject"]["dpp"]
 
 
 class TestGenerateFromReconciledState:
@@ -157,6 +157,13 @@ class TestGenerateFromReconciledState:
         passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
         dpp = _dpp_payload(passport)
 
+        credential_subject = passport["credentialSubject"]
+
+        assert credential_subject["id"] == "did:web:passportai.example.com:products:12345678901234"
+        assert credential_subject["id"].startswith("did:web:passportai.example.com:products:")
+        assert credential_subject["id"].endswith("12345678901234")
+        assert "dpp" in credential_subject
+        assert "dpp" not in credential_subject["dpp"]
         assert passport["@context"][0] == "https://www.w3.org/ns/credentials/v2"
         assert passport["type"] == [
             "VerifiableCredential",
@@ -318,7 +325,25 @@ class TestValidate:
         assert valid is False
         assert "Missing required field: credentialSubject" in errors
         assert "credentialSubject must be a dict" in errors
+    def test_nested_dpp_payload_fails(
+        self,
+        generator,
+        reconciled_textile_data,
+        ready_audit_payload,
+        fixed_now,
+    ):
+        passport = _generate(generator, reconciled_textile_data, ready_audit_payload, fixed_now)
+        passport["credentialSubject"]["dpp"] = {
+            "dpp": passport["credentialSubject"]["dpp"]
+        }
 
+        valid, errors = generator.validate(passport)
+
+        assert valid is False
+        assert (
+            "credentialSubject.dpp must contain the DPP payload directly, "
+            "not nested under credentialSubject.dpp.dpp"
+        ) in errors
     def test_sector_block_must_match_product_group(
         self,
         generator,

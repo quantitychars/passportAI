@@ -178,8 +178,6 @@ class DPPGenerator:
 
         credential_subject = {
             "id": product_subject_id,
-            # Current schema expects universal_dpp.json object under credentialSubject.dpp,
-            # which itself wraps the actual payload under "dpp".
             "dpp": dpp_document,
         }
 
@@ -270,14 +268,16 @@ class DPPGenerator:
         if "id" not in credential_subject:
             errors.append("credentialSubject.id is required")
 
-        dpp_container = credential_subject.get("dpp")
-        if not isinstance(dpp_container, dict):
+        dpp = credential_subject.get("dpp")
+        if not isinstance(dpp, dict):
             errors.append("credentialSubject.dpp must be a dict")
             return len(errors) == 0, errors
 
-        dpp = dpp_container.get("dpp")
-        if not isinstance(dpp, dict):
-            errors.append("credentialSubject.dpp.dpp must be a dict")
+        if isinstance(dpp.get("dpp"), dict):
+            errors.append(
+                "credentialSubject.dpp must contain the DPP payload directly, "
+                "not nested under credentialSubject.dpp.dpp"
+            )
             return len(errors) == 0, errors
 
         product_group = dpp.get("productGroup")
@@ -428,7 +428,7 @@ class DPPGenerator:
         if isinstance(voluntary_esg, dict):
             dpp_payload["voluntaryEsg"] = voluntary_esg
 
-        return {"dpp": dpp_payload}
+        return dpp_payload
 
     def _build_sector_profile(self, espr_core: dict[str, Any]) -> dict[str, Any]:
         source = espr_core.get("sector_profile", {}) or {}
