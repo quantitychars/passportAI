@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -252,12 +253,13 @@ class PassportPipeline:
         state.is_publishable = assessment.get("is_publishable")
 
     def _run_packaging_step(self, state: PipelineState) -> None:
-        """Step 4: optional packaging/rendering.
+        """Step 4: project reconciled state into a DPP JSON artifact.
 
-        At step 1.7, packaging is intentionally light:
-        - no GS1 agent call here anymore
-        - no forced passport_json generation yet
-        - later step 1.6 will attach DPPGenerator here or just before it
+        Invariants:
+        - DPPGenerator consumes only reconciled_domain_data plus audit policy.
+        - DPPGenerator does not see raw agent outputs.
+        - passport_json is stored only after generator validation succeeds.
+        - artifact_paths["passport.json"] points at the deterministic JSON artifact.
         """
         dpp_generator = self.agents.get("dpp_generator")
         if dpp_generator is None:
@@ -266,9 +268,43 @@ class PassportPipeline:
             )
             return
 
-        state.warnings.append(
-            "DPPGenerator integration is not implemented in pipeline yet; audit output is available."
+        if not isinstance(state.reconciled_domain_data, dict):
+            raise RuntimeError("reconciled_domain_data is missing before packaging step.")
+
+        audit_payload = self._require_success_payload(
+            state.audit_result,
+            "DataAuditAgent",
         )
+        passport_public_url = self.storage.get_public_url(
+            state.passport_id,
+            "passport.json",
+        )
+
+        passport_json = dpp_generator.generate_from_reconciled_state(
+            reconciled_domain_data=state.reconciled_domain_data,
+            audit_payload=audit_payload,
+            passport_id=state.passport_id,
+            public_package_url=passport_public_url,
+            qr_url=state.qr_url,
+        )
+
+        is_valid, validation_errors = dpp_generator.validate(passport_json)
+        if not is_valid:
+            rendered_errors = "; ".join(validation_errors) or "unknown validation error"
+            raise RuntimeError(f"DPPGenerator validation failed: {rendered_errors}")
+
+        artifact_path = self._write_passport_json_artifact(
+            passport_id=state.passport_id,
+            passport_json=passport_json,
+        )
+        package_url = self.storage.save_package(
+            state.passport_id,
+            {"passport.json": artifact_path},
+        )
+
+        state.passport_json = passport_json
+        state.artifact_paths["passport.json"] = artifact_path
+        state.package_url = package_url
 
     def _build_reconciled_domain_data(self, state: PipelineState) -> dict[str, Any]:
         """Build one final domain snapshot from boundary-clean agent outputs.
@@ -419,6 +455,28 @@ class PassportPipeline:
                 reconciled.setdefault("sectoral", {}).setdefault(
                     selected_group, {}
                 ).update(selected_patch)
+
+
+    def _write_passport_json_artifact(
+        self,
+        *,
+        passport_id: str,
+        passport_json: dict[str, Any],
+    ) -> Path:
+        """Persist generated DPP JSON to a deterministic local path."""
+        get_package_dir = getattr(self.storage, "get_package_dir", None)
+        if callable(get_package_dir):
+            package_dir = Path(get_package_dir(passport_id))
+        else:
+            package_dir = Path("output") / passport_id
+
+        package_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = package_dir / "passport.json"
+        artifact_path.write_text(
+            json.dumps(passport_json, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return artifact_path
 
     def _extract_payload_or_none(
         self,
