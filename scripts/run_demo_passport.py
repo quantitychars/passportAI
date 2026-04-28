@@ -24,6 +24,7 @@ from agents.regulatory_consultant import RegulatoryConsultant
 from agents.vision_agent import VisionAgent
 from src.core.dpp_generator import DPPGenerator
 from src.core.gap_report import GapReportGenerator
+from src.core.passport_renderer import PassportRenderer
 from src.core.gemma_client import GemmaClient, GemmaClientError
 from src.core.pipeline import PassportPipeline
 from src.storage.local import LocalStorage
@@ -115,9 +116,9 @@ def main() -> int:
 
     try:
         client = GemmaClient(
-        timeout=args.timeout,
-        validate_on_init=not args.skip_ollama_check,
-    )
+            timeout=args.timeout,
+            validate_on_init=not args.skip_ollama_check,
+        )
     except (ImportError, ValueError, GemmaClientError) as exc:
         print(f"ERROR: Gemma/Ollama preflight failed: {exc}", file=sys.stderr)
         print(
@@ -141,6 +142,7 @@ def main() -> int:
 
             "audit": DataAuditAgent(client=None),
             "dpp_generator": DPPGenerator(client=None),
+            "passport_renderer": PassportRenderer(),
             "gap_report": GapReportGenerator(client=None),
         },
         storage=storage,

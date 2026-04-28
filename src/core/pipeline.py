@@ -45,6 +45,7 @@ class PipelineState:
     readiness_verdict: str | None = None
     is_publishable: bool | None = None
     gap_report_path: Path | None = None
+    passport_html_path: Path | None = None
 
     # Packaging / artifact step
     passport_json: dict[str, Any] | None = None
@@ -95,8 +96,9 @@ class PassportPipeline:
         - "lca"
         - "gs1"
         - "audit"
-        - "dpp_generator"   # optional in step 1.6
-        - "gap_report"      # optional later
+        - "dpp_generator"       # optional packaging artifact generator
+        - "passport_renderer"   # optional human-readable DPP renderer
+        - "gap_report"          # optional remediation report renderer
     """
 
     def __init__(
@@ -129,6 +131,7 @@ class PassportPipeline:
             self._run_generation_step(state)
             self._run_review_step(state)
             self._run_packaging_step(state)
+            self._run_passport_rendering_step(state)
             self._run_gap_report_step(state)
             self._publish_artifact_package(state)
         except Exception as exc:
@@ -304,6 +307,30 @@ class PassportPipeline:
         state.passport_json = passport_json
         state.artifact_paths["passport.json"] = artifact_path
     
+    def _run_passport_rendering_step(self, state: PipelineState) -> None:
+        """Step 5: render a human-readable Digital Product Passport artifact.
+
+        Invariants:
+        - PassportRenderer consumes passport_json only.
+        - It must not read raw agent outputs or synthesize product facts.
+        - passport.html is a presentation artifact, not a second source of truth.
+        """
+        passport_renderer = self.agents.get("passport_renderer")
+        if passport_renderer is None:
+            return
+
+        if state.passport_json is None:
+            raise RuntimeError("passport_json is missing before passport rendering step.")
+
+        passport_html_path = passport_renderer.generate(
+            passport_json=state.passport_json,
+            output_dir=self._get_package_dir(state.passport_id),
+            passport_id=state.passport_id,
+        )
+
+        state.passport_html_path = passport_html_path
+        state.artifact_paths["passport.html"] = passport_html_path
+
     def _run_gap_report_step(self, state: PipelineState) -> None:
         """Step 5: render a human-readable remediation report from audit output.
 

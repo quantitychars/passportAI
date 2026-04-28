@@ -306,14 +306,31 @@ class _StubDPPGenerator:
             "credentialSubject": {
                 "id": f"did:web:passportai.example.com:products:{passport_id}",
                 "dpp": {
-                    "dpp": {
-                        "passportId": passport_id,
-                        "productGroup": product_group,
-                        "regulatedCore": {
-                            "productIdentity": {"esprCategory": product_group}
+                    "passportId": passport_id,
+                    "productGroup": product_group,
+                    "regulatedCore": {
+                        "passportIdentity": {"status": "draft"},
+                        "productIdentity": {
+                            "productName": "Photo-derived tote bag",
+                            "brandName": "User Brand",
+                            "productDescription": "photo-only textile product",
+                            "esprCategory": product_group,
                         },
-                        "sectoralTextile": {},
-                    }
+                        "identifiers": {},
+                        "dataCarrier": {
+                            "resolverUrl": f"http://example.test/{passport_id}",
+                            "carrierValue": f"http://example.test/{passport_id}",
+                        },
+                        "compliance": {},
+                    },
+                    "sectoralTextile": {},
+                    "systemMetadata": {
+                        "qualityAssessment": {
+                            "readinessScore": 96,
+                            "missingFields": [],
+                        },
+                        "platform": {"humanReviewStatus": "not_reviewed"},
+                    },
                 },
             },
         }
@@ -322,6 +339,28 @@ class _StubDPPGenerator:
         if self.validation_errors:
             return False, list(self.validation_errors)
         return True, []
+
+
+
+class _StubPassportRenderer:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.last_kwargs = None
+
+    def generate(self, **kwargs):
+        self.last_kwargs = kwargs
+        if self.fail:
+            raise RuntimeError("passport renderer failed")
+
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        passport_html_path = output_dir / "passport.html"
+        passport_html_path.write_text(
+            "<html><body>Passport</body></html>",
+            encoding="utf-8",
+        )
+        return passport_html_path
 
 class _StubGapReportGenerator:
     def __init__(self, *, fail: bool = False):
@@ -531,6 +570,71 @@ def test_pipeline_generates_gap_report_from_audit_result(tmp_path):
 
     assert storage.saved_files[result.passport_id] == {
         "passport.json": passport_path,
+        "gap_report.html": gap_report_path,
+    }
+
+def test_pipeline_generates_passport_html_from_passport_json(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _DummyStorage(output_dir=tmp_path / "output")
+    dpp_generator = _StubDPPGenerator()
+    passport_renderer = _StubPassportRenderer()
+    gap_report_generator = _StubGapReportGenerator()
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+            "passport_renderer": passport_renderer,
+            "gap_report": gap_report_generator,
+        },
+        storage=storage,
+    )
+
+    result = pipeline.run(
+        image_path=image_path,
+        description="photo-only textile product",
+        user_inputs={"brand_name": "User Brand"},
+    )
+
+    assert result.success is True
+    assert result.passport_json is not None
+
+    passport_json_path = result.artifact_paths["passport.json"]
+    passport_html_path = result.artifact_paths["passport.html"]
+    gap_report_path = result.artifact_paths["gap_report.html"]
+
+    assert passport_json_path.exists()
+    assert passport_html_path == tmp_path / "output" / result.passport_id / "passport.html"
+    assert passport_html_path.exists()
+    assert gap_report_path.exists()
+
+    assert passport_renderer.last_kwargs is not None
+    assert passport_renderer.last_kwargs["passport_json"] == result.passport_json
+    assert passport_renderer.last_kwargs["passport_id"] == result.passport_id
+    assert passport_renderer.last_kwargs["output_dir"] == tmp_path / "output" / result.passport_id
+
+    forbidden_renderer_inputs = {
+        "audit_result",
+        "reconciled_domain_data",
+        "vision_result",
+        "regulatory_result",
+        "legal_result",
+        "lca_result",
+        "gs1_result",
+        "agent_outputs",
+    }
+    assert forbidden_renderer_inputs.isdisjoint(passport_renderer.last_kwargs)
+
+    assert storage.saved_files[result.passport_id] == {
+        "passport.json": passport_json_path,
+        "passport.html": passport_html_path,
         "gap_report.html": gap_report_path,
     }
 
