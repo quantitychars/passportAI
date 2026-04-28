@@ -148,6 +148,10 @@ def test_generate_writes_human_readable_html(tmp_path, audit_result):
     assert "Supplier request pack" in html
     assert "2026-04-27T13:00:00Z" in html
     assert "DPP JSON used as source = False" in html
+    assert "Download / Save as PDF" in html
+    assert "Evidence readiness audit" in html
+    assert "Top fixes before publication" in html
+    assert "Technical field path" in html
 
 
 def test_build_view_model_groups_gaps_by_operational_meaning(audit_result):
@@ -173,11 +177,10 @@ def test_build_view_model_groups_gaps_by_operational_meaning(audit_result):
     assert model["gap_groups"]["blocking"][0]["field"] == "operator_identifier"
     assert model["gap_groups"]["weak_evidence"][0]["field"] == "fiber_composition"
     assert model["gap_groups"]["unverified"][0]["field"] == "declaration_of_conformity"
-    assert model["audit_metadata"] == {
-        "source": "DataAuditAgent",
-        "raw_agent_outputs_included": False,
-        "dpp_json_used_as_source": False,
-    }
+    assert model["audit_metadata"]["source"] == "DataAuditAgent"
+    assert model["audit_metadata"]["source_label"] == "Evidence readiness audit"
+    assert model["audit_metadata"]["raw_agent_outputs_included"] is False
+    assert model["audit_metadata"]["dpp_json_used_as_source"] is False
 
 
 def test_generate_does_not_mutate_audit_result(tmp_path, audit_result):
@@ -208,3 +211,146 @@ def test_deprecated_generator_first_gap_analysis_stays_blocked():
 
     with pytest.raises(RuntimeError, match="deprecated"):
         generator.analyze_gaps(passport_json={}, required_fields=[])
+def test_build_view_model_adds_human_labels_for_sector_specific_fields(audit_result):
+    audit_result = copy.deepcopy(audit_result)
+    audit_result["data"]["assessment"]["missing_fields"].append(
+        {
+            "gap_id": "battery_category:missing",
+            "field": "dpp.sectoralBattery.batteryClassification.batteryCategory",
+            "severity": "required",
+            "blocking": True,
+            "reason_code": "missing",
+            "reason": "Battery category was not confirmed.",
+            "why_it_matters": "Battery category determines the expected regulatory evidence set.",
+            "current_evidence_status": "absent",
+            "acceptable_evidence": ["supplier_statement", "technical_documentation"],
+            "where_to_get_data": "supplier battery specification",
+            "closure_condition": "Provide a supplier-confirmed battery category.",
+            "action": "Request battery category from the supplier.",
+            "owner_hint": "supplier",
+            "source_agents": ["RegulatoryConsultant"],
+            "requires_supplier_confirmation": True,
+        }
+    )
+
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=audit_result,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+
+    all_gaps = [
+        gap
+        for group in model["gap_groups"].values()
+        for gap in group
+    ]
+    battery_gap = next(
+        gap
+        for gap in all_gaps
+        if gap["field"] == "dpp.sectoralBattery.batteryClassification.batteryCategory"
+    )
+
+    assert battery_gap["field_label"] == "Battery category"
+    assert "regulatory battery category" in battery_gap["field_description"]
+    assert battery_gap["owner_label"] == "Supplier"
+    assert battery_gap["current_evidence_status_label"] == "No evidence yet"
+    assert battery_gap["source_processes"] == [
+        {
+            "name": "RegulatoryConsultant",
+            "label": "Regulatory field mapping",
+        }
+    ]
+def test_recommended_and_optional_gaps_are_not_displayed_as_publication_blockers(audit_result):
+    audit_result = copy.deepcopy(audit_result)
+    audit_result["data"]["assessment"]["missing_fields"] = [
+        {
+            "gap_id": "battery_category:missing",
+            "field": "dpp.sectoralBattery.batteryClassification.batteryCategory",
+            "severity": "required",
+            "blocking": True,
+            "reason_code": "missing",
+            "reason": "Battery category was not confirmed.",
+            "why_it_matters": "Battery category determines the expected regulatory evidence set.",
+            "current_evidence_status": "absent",
+            "acceptable_evidence": ["supplier_statement"],
+            "where_to_get_data": "supplier battery specification",
+            "closure_condition": "Provide a supplier-confirmed battery category.",
+            "action": "Request battery category from the supplier.",
+            "owner_hint": "supplier",
+            "source_agents": ["RegulatoryConsultant"],
+            "requires_supplier_confirmation": True,
+        },
+        {
+            "gap_id": "facility_identifier:missing",
+            "field": "dpp.regulatedCore.identifiers.uniqueFacilityIdentifier.value",
+            "severity": "optional",
+            "blocking": True,
+            "reason_code": "missing",
+            "reason": "No facility identifier is currently available.",
+            "why_it_matters": "Facility-level traceability may be useful.",
+            "current_evidence_status": "absent",
+            "acceptable_evidence": ["system_export"],
+            "where_to_get_data": "ERP or product master data",
+            "closure_condition": "Provide facility identifier if plant-level traceability is needed.",
+            "action": "Add a facility identifier if needed.",
+            "owner_hint": "brand_owner",
+            "source_agents": ["GS1Specialist"],
+            "requires_supplier_confirmation": False,
+        },
+    ]
+
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=audit_result,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+
+    assert model["gap_counts"]["blocking"] == 1
+
+    blocking_fields = {gap["field"] for gap in model["gap_groups"]["blocking"]}
+    assert "dpp.sectoralBattery.batteryClassification.batteryCategory" in blocking_fields
+    assert "dpp.regulatedCore.identifiers.uniqueFacilityIdentifier.value" not in blocking_fields
+
+    all_gaps = [
+        gap
+        for group in model["gap_groups"].values()
+        for gap in group
+    ]
+    facility_gap = next(
+        gap
+        for gap in all_gaps
+        if gap["field"] == "dpp.regulatedCore.identifiers.uniqueFacilityIdentifier.value"
+    )
+
+    assert facility_gap["raw_blocking"] is True
+    assert facility_gap["display_blocking"] is False
+    assert facility_gap["blocking_downgraded"] is True
+
+def test_view_model_humanizes_actions_supplier_requests_and_process_names(audit_result):
+    audit_result = copy.deepcopy(audit_result)
+    audit_result["data"]["advisory"]["supplier_requests"] = [
+        {
+            "request": (
+                "Provide authoritative evidence for "
+                "dpp.sectoralBattery.batteryClassification.batteryCategory."
+            ),
+            "why_needed": "Closes dpp.sectoralBattery.batteryClassification.batteryCategory.",
+            "document_type": "supplier statement",
+        }
+    ]
+
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=audit_result,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+
+    assert model["action_plan"][0]["owner_label"] == "Brand owner"
+    assert model["audit_metadata"]["source_label"] == "Evidence readiness audit"
+
+    request = model["supplier_requests"][0]
+    assert request["request_label"] == "Provide authoritative evidence for Battery category."
+    assert request["technical_field_path"] == (
+        "dpp.sectoralBattery.batteryClassification.batteryCategory"
+    )
+    assert "Battery category" in request["why_needed"]

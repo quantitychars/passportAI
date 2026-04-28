@@ -18,7 +18,95 @@ from typing import Any
 
 _PRIORITY_ORDER = {"now": 0, "soon": 1, "later": 2}
 _SEVERITY_ORDER = {"critical": 0, "required": 1, "recommended": 2, "optional": 3}
+_PUBLICATION_BLOCKING_SEVERITIES = {"critical", "required"}
 
+_FIELD_HELP: dict[str, tuple[str, str]] = {
+    "dpp.regulatedCore.compliance.declarationOfConformity": (
+        "Declaration of conformity",
+        "The declaration or conformity evidence that supports regulated product claims.",
+    ),
+    "dpp.regulatedCore.compliance.technicalDocumentation": (
+        "Technical documentation",
+        "The technical file or document reference that supports the passport claims.",
+    ),
+    "dpp.regulatedCore.dataCarrier.carrierValue": (
+        "QR / data carrier value",
+        "The exact value encoded in the product QR code or other data carrier.",
+    ),
+    "dpp.regulatedCore.dataCarrier.resolverUrl": (
+        "Public resolver URL",
+        "The stable public URL where the passport package can be resolved.",
+    ),
+    "dpp.regulatedCore.dataCarrier.isPersistent": (
+        "Persistent data carrier URL",
+        "Whether the QR/resolver URL is stable enough for printed labels and long-lived access.",
+    ),
+    "dpp.regulatedCore.identifiers.persistentUniqueProductIdentifier.value": (
+        "Persistent product identifier",
+        "The stable product identifier that links the passport to product master data.",
+    ),
+    "dpp.regulatedCore.identifiers.persistentUniqueProductIdentifier.scheme": (
+        "Product identifier scheme",
+        "The identifier standard used for the product, such as GTIN, DID, or an internal master-data scheme.",
+    ),
+    "dpp.regulatedCore.identifiers.uniqueOperatorIdentifier.value": (
+        "Economic operator identifier",
+        "The manufacturer, importer, or responsible operator identifier used for traceability.",
+    ),
+    "dpp.regulatedCore.identifiers.uniqueFacilityIdentifier.value": (
+        "Manufacturing facility identifier",
+        "The plant or facility identifier used when facility-level traceability is required.",
+    ),
+    "dpp.regulatedCore.productIdentity.cnCode": (
+        "Customs CN code",
+        "The Combined Nomenclature customs code used to classify the product for EU trade and compliance workflows.",
+    ),
+    "dpp.sectoralBattery.batteryClassification.batteryCategory": (
+        "Battery category",
+        "The regulatory battery category, such as portable, LMT, SLI, industrial, or EV battery.",
+    ),
+    "dpp.sectoralBattery.batteryClassification.chemistry": (
+        "Battery chemistry",
+        "The electrochemical chemistry, such as alkaline, lithium-ion, lead-acid, or another supplier-confirmed chemistry.",
+    ),
+    "dpp.sectoralBattery.conformityAndInformation.declarationOfConformityReference": (
+        "Battery declaration of conformity",
+        "Reference to the document that supports conformity and safety claims for the battery product.",
+    ),
+    "dpp.sectoralBattery.sustainabilityAndComposition.carbonFootprint": (
+        "Battery carbon footprint",
+        "Supplier or lifecycle evidence for the product-level carbon footprint.",
+    ),
+    "dpp.sectoralBattery.sustainabilityAndComposition.criticalRawMaterials": (
+        "Critical raw materials",
+        "Information about battery materials that may trigger sectoral disclosure requirements.",
+    ),
+    "dpp.sectoralBattery.sustainabilityAndComposition.recycledContent": (
+        "Battery recycled content",
+        "Evidence for recycled content percentages or supplier declarations.",
+    ),
+    "dpp.voluntaryEsg.packaging.material": (
+        "Packaging material",
+        "Packaging material, recyclability, and recycled-content information.",
+    ),
+}
+
+_SOURCE_PROCESS_LABELS = {
+    "VisionAgent": "Visual evidence extraction",
+    "RegulatoryConsultant": "Regulatory field mapping",
+    "LegalAgent": "Legal evidence check",
+    "LCASpecialist": "Sustainability evidence check",
+    "GS1Specialist": "Identifier and data-carrier check",
+    "DataAuditAgent": "Evidence readiness audit",
+}
+
+_SOURCE_PROCESS_EXPLANATIONS = {
+    "DataAuditAgent": (
+        "Evidence readiness audit combines the pipeline outputs into a publication-readiness verdict. "
+        "It checks missing fields, weak evidence, contradictions, and publication blockers. "
+        "It does not invent product facts."
+    ),
+}
 
 class GapReportGenerator:
     """Render an SME-readable remediation report from DataAuditAgent output.
@@ -96,21 +184,35 @@ class GapReportGenerator:
         gaps = self._normalize_gaps(assessment.get("missing_fields", []))
         gap_groups = self._group_gaps(gaps)
 
+        action_plan = self._normalize_action_plan(
+            advisory.get("recommended_next_actions", [])
+        )
+        top_actions = self._build_top_actions(gaps=gaps, fallback_actions=action_plan)
+        blocking_items = self._build_publication_blocker_items(
+            raw_blocking_issues=assessment.get("blocking_issues", []),
+            gaps=gaps,
+        )
+
         blocking_issues = self._clean_string_list(assessment.get("blocking_issues", []))
         contradictions = self._clean_string_list(assessment.get("contradictions", []))
         is_publishable = bool(assessment.get("is_publishable", False))
         needs_human_review = bool(assessment.get("needs_human_review", False))
         has_blockers = (
-            bool(blocking_issues)
+            bool(blocking_items)
             or bool(contradictions)
-            or any(gap.get("blocking") for gap in gaps)
             or needs_human_review
             or not is_publishable
         )
 
         now = generated_at or datetime.now(timezone.utc)
+
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
+
+        action_plan = self._normalize_action_plan(
+            advisory.get("recommended_next_actions", [])
+        )
+
 
         return {
             "schema_version": "gap_report.v1",
@@ -125,12 +227,17 @@ class GapReportGenerator:
                 "verdict_label": self._verdict_label(assessment.get("readiness_verdict")),
                 "is_publishable": is_publishable,
                 "needs_human_review": needs_human_review,
-                "summary": self._clean_string(advisory.get("agent_summary"))
-                or "No audit summary was provided.",
+                "summary": self._build_readiness_summary(
+                    score=self._normalize_score(assessment.get("readiness_score")),
+                    verdict=self._clean_string(assessment.get("readiness_verdict")) or "not_ready",
+                    total_gaps=len(gaps),
+                    publication_blockers=len(blocking_items),
+                ),
             },
             "publication_blockers": {
                 "has_blockers": has_blockers,
                 "blocking_issues": blocking_issues,
+                "blocking_items": blocking_items,
                 "contradictions": contradictions,
             },
             "gap_counts": {
@@ -142,9 +249,8 @@ class GapReportGenerator:
                 "recommended": len(gap_groups["recommended"]),
             },
             "gap_groups": gap_groups,
-            "action_plan": self._normalize_action_plan(
-                advisory.get("recommended_next_actions", [])
-            ),
+            "action_plan": action_plan,
+            "top_actions": top_actions,
             "supplier_requests": self._normalize_supplier_requests(
                 advisory.get("supplier_requests", [])
             ),
@@ -152,10 +258,18 @@ class GapReportGenerator:
                 advisory.get("where_to_get_data", [])
             ),
             "business_risks": self._clean_string_list(advisory.get("business_risks", [])),
-            "warnings": self._clean_string_list(assessment.get("warnings", [])),
-            "assumptions": self._clean_string_list(assessment.get("assumptions", [])),
+            "warnings": [
+                self._humanize_process_message(item)
+                for item in self._clean_string_list(assessment.get("warnings", []))
+            ],
+            "assumptions": [
+                self._humanize_process_message(item)
+                for item in self._clean_string_list(assessment.get("assumptions", []))
+            ],
             "audit_metadata": {
                 "source": "DataAuditAgent",
+                "source_label": _SOURCE_PROCESS_LABELS["DataAuditAgent"],
+                "source_explanation": _SOURCE_PROCESS_EXPLANATIONS["DataAuditAgent"],
                 "raw_agent_outputs_included": False,
                 "dpp_json_used_as_source": False,
             },
@@ -394,6 +508,13 @@ class GapReportGenerator:
 
             field = self._clean_string(raw.get("field")) or f"unknown.field.{index}"
             severity = self._clean_string(raw.get("severity")) or "required"
+
+            raw_blocking = bool(raw.get("blocking", False))
+            display_blocking = self._is_publication_blocking(
+                raw_blocking=raw_blocking,
+                severity=severity,
+            )
+
             reason_code = self._clean_string(raw.get("reason_code")) or "missing"
             source_agents = raw.get("source_agents")
             acceptable_evidence = raw.get("acceptable_evidence")
@@ -402,27 +523,49 @@ class GapReportGenerator:
                 {
                     "gap_id": self._clean_string(raw.get("gap_id")) or f"{field}:{reason_code}",
                     "field": field,
+                    "field_label": self._field_label(field),
+                    "field_description": self._field_description(field),
                     "severity": severity,
                     "severity_label": severity.replace("_", " ").title(),
-                    "blocking": bool(raw.get("blocking", False)),
+                    "raw_blocking": raw_blocking,
+                    "blocking": display_blocking,
+                    "display_blocking": display_blocking,
+                    "blocking_downgraded": raw_blocking and not display_blocking,
                     "reason_code": reason_code,
-                    "reason": self._clean_string(raw.get("reason"))
-                    or "Missing or weak evidence for this field.",
-                    "why_it_matters": self._clean_string(raw.get("why_it_matters"))
-                    or "This field affects passport completeness or defensibility.",
+                    "reason": self._humanize_field_references(
+                        self._clean_string(raw.get("reason"))
+                        or "Missing or weak evidence for this field."
+                    ),
+                    "why_it_matters": self._humanize_field_references(
+                        self._clean_string(raw.get("why_it_matters"))
+                        or "This field affects passport completeness or defensibility."
+                    ),
                     "current_evidence_status": self._clean_string(
                         raw.get("current_evidence_status")
                     )
                     or "absent",
+                    "current_evidence_status_label": self._evidence_status_label(
+                        self._clean_string(raw.get("current_evidence_status")) or "absent"
+                    ),
                     "acceptable_evidence": self._clean_string_list(acceptable_evidence),
-                    "where_to_get_data": self._clean_string(raw.get("where_to_get_data"))
-                    or "authoritative product records or supplier evidence",
-                    "closure_condition": self._clean_string(raw.get("closure_condition"))
-                    or "Provide a documented value from an authoritative source.",
-                    "action": self._clean_string(raw.get("action"))
-                    or f"Provide authoritative evidence for {field}.",
+                    "where_to_get_data": self._humanize_field_references(
+                        self._clean_string(raw.get("where_to_get_data"))
+                        or "authoritative product records or supplier evidence"
+                    ),
+                    "closure_condition": self._humanize_field_references(
+                        self._clean_string(raw.get("closure_condition"))
+                        or "Provide a documented value from an authoritative source."
+                    ),
+                    "action": self._humanize_field_references(
+                        self._clean_string(raw.get("action"))
+                        or f"Provide authoritative evidence for {self._field_label(field)}."
+                    ),
                     "owner_hint": self._clean_string(raw.get("owner_hint")) or "unknown",
+                    "owner_label": self._owner_label(
+                        self._clean_string(raw.get("owner_hint")) or "unknown"
+                    ),
                     "source_agents": self._clean_string_list(source_agents),
+                    "source_processes": self._source_processes(source_agents),
                     "requires_supplier_confirmation": bool(
                         raw.get("requires_supplier_confirmation", False)
                     ),
@@ -453,7 +596,7 @@ class GapReportGenerator:
             reason_code = gap.get("reason_code")
             evidence_status = gap.get("current_evidence_status")
 
-            if gap.get("blocking"):
+            if gap.get("display_blocking"):
                 groups["blocking"].append(gap)
             elif reason_code in {"missing", "document_absent"} or evidence_status == "absent":
                 groups["missing"].append(gap)
@@ -477,13 +620,20 @@ class GapReportGenerator:
             action = self._clean_string(raw.get("action"))
             if not action:
                 continue
+
             priority = self._clean_string(raw.get("priority")) or "later"
+            owner = self._clean_string(raw.get("owner")) or "unknown"
+
             actions.append(
                 {
                     "priority": priority,
                     "priority_label": priority.replace("_", " ").title(),
-                    "action": action,
-                    "owner": self._clean_string(raw.get("owner")) or "unknown",
+                    "action": self._humanize_field_references(action),
+                    "owner": owner,
+                    "owner_label": self._owner_label(owner),
+                    "field_label": "",
+                    "field": "",
+                    "severity": "",
                 }
             )
 
@@ -491,7 +641,7 @@ class GapReportGenerator:
             actions,
             key=lambda action: (
                 _PRIORITY_ORDER.get(action["priority"], 99),
-                action["owner"],
+                action["owner_label"],
                 action["action"],
             ),
         )
@@ -504,14 +654,27 @@ class GapReportGenerator:
         for raw in raw_requests:
             if not isinstance(raw, dict):
                 continue
+
             request = self._clean_string(raw.get("request"))
             if not request:
                 continue
+
+            field_path = self._extract_field_path(request)
+            request_label = (
+                f"Provide authoritative evidence for {self._field_label(field_path)}."
+                if field_path
+                else self._humanize_field_references(request)
+            )
+
             requests.append(
                 {
-                    "request": request,
-                    "why_needed": self._clean_string(raw.get("why_needed"))
-                    or "Needed to close a passport evidence gap.",
+                    "request": self._humanize_field_references(request),
+                    "request_label": request_label,
+                    "technical_field_path": field_path,
+                    "why_needed": self._humanize_field_references(
+                        self._clean_string(raw.get("why_needed"))
+                        or "Needed to close a passport evidence gap."
+                    ),
                     "document_type": self._clean_string(raw.get("document_type"))
                     or "supporting document or supplier statement",
                 }
@@ -533,12 +696,322 @@ class GapReportGenerator:
             sources.append(
                 {
                     "missing_topic": topic,
+                    "missing_topic_label": self._field_label(topic),
                     "source": source,
-                    "how_to_obtain": self._clean_string(raw.get("how_to_obtain"))
-                    or "Collect this from the authoritative owner and rerun audit.",
+                    "how_to_obtain": self._humanize_field_references(
+                        self._clean_string(raw.get("how_to_obtain"))
+                        or "Collect this from the authoritative owner and rerun audit."
+                    ),
                 }
             )
         return sources
+
+    def _field_label(self, field: str) -> str:
+        help_entry = _FIELD_HELP.get(field)
+        if help_entry is not None:
+            return help_entry[0]
+
+        leaf = field.split(".")[-1] if field else "field"
+        return self._split_identifier(leaf).title()
+
+
+    def _field_description(self, field: str) -> str:
+        help_entry = _FIELD_HELP.get(field)
+        if help_entry is not None:
+            return help_entry[1]
+
+        if field.startswith("dpp."):
+            return "A Digital Product Passport field that needs stronger evidence before publication."
+
+        return "A passport readiness field that needs stronger evidence before publication."
+
+
+    def _source_processes(self, source_agents: Any) -> list[dict[str, str]]:
+        processes = []
+        for agent in self._clean_string_list(source_agents):
+            processes.append(
+                {
+                    "name": agent,
+                    "label": _SOURCE_PROCESS_LABELS.get(
+                        agent,
+                        self._split_identifier(agent).title(),
+                    ),
+                }
+            )
+        return processes
+
+
+    def _owner_label(self, owner: str) -> str:
+        labels = {
+            "brand_owner": "Brand owner",
+            "manufacturer": "Manufacturer",
+            "supplier": "Supplier",
+            "internal_compliance": "Internal compliance",
+            "economic_operator": "Responsible economic operator",
+            "unknown": "Owner to assign",
+        }
+        return labels.get(owner, self._split_identifier(owner).title())
+
+
+    def _evidence_status_label(self, status: str) -> str:
+        labels = {
+            "absent": "No evidence yet",
+            "photo_only": "Photo evidence only",
+            "claim_only": "Claim without proof",
+            "document_present_unverified": "Document present but unverified",
+            "verified_documented": "Verified documented evidence",
+        }
+        return labels.get(status, self._split_identifier(status).title())
+
+
+    def _split_identifier(self, value: str) -> str:
+        if not value:
+            return "field"
+
+        text = value.replace("_", " ").replace("-", " ")
+        chars = []
+        previous = ""
+
+        for char in text:
+            if previous and char.isupper() and (previous.islower() or previous.isdigit()):
+                chars.append(" ")
+            chars.append(char)
+            previous = char
+
+        return " ".join("".join(chars).split())
+
+    def _is_publication_blocking(self, *, raw_blocking: bool, severity: str) -> bool:
+        return raw_blocking and severity in _PUBLICATION_BLOCKING_SEVERITIES
+
+
+    def _build_publication_blocker_items(
+        self,
+        *,
+        raw_blocking_issues: Any,
+        gaps: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        seen = set()
+
+        for gap in gaps:
+            if not gap.get("display_blocking"):
+                continue
+
+            key = gap["field"]
+            seen.add(key)
+            items.append(
+                {
+                    "label": f"{gap['field_label']} is missing or not defensible",
+                    "field": gap["field"],
+                    "reason": gap["reason"],
+                    "owner_label": gap["owner_label"],
+                    "severity_label": gap["severity_label"],
+                }
+            )
+
+        for raw in self._clean_string_list(raw_blocking_issues):
+            field = self._extract_field_path(raw)
+            if field and field in seen:
+                continue
+
+            items.append(
+                {
+                    "label": self._humanize_field_references(raw),
+                    "field": field or "",
+                    "reason": "Audit marked this issue as blocking publication readiness.",
+                    "owner_label": "Owner to assign",
+                    "severity_label": "Blocking",
+                }
+            )
+
+        return items
+
+
+    def _build_top_actions(
+        self,
+        *,
+        gaps: list[dict[str, Any]],
+        fallback_actions: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        actions: list[dict[str, str]] = []
+
+        sorted_gaps = sorted(
+            gaps,
+            key=lambda gap: (
+                0 if gap.get("display_blocking") else 1,
+                _SEVERITY_ORDER.get(gap.get("severity", ""), 99),
+                0 if gap.get("requires_supplier_confirmation") else 1,
+                gap.get("field_label", ""),
+            ),
+        )
+
+        for gap in sorted_gaps:
+            if len(actions) >= 5:
+                break
+
+            if not gap.get("display_blocking") and gap.get("severity") not in {
+                "critical",
+                "required",
+            }:
+                continue
+
+            actions.append(
+                {
+                    "priority": "now" if gap.get("display_blocking") else "soon",
+                    "priority_label": "Now" if gap.get("display_blocking") else "Soon",
+                    "owner": gap.get("owner_hint", "unknown"),
+                    "owner_label": gap.get("owner_label", "Owner to assign"),
+                    "action": gap.get("action", f"Provide evidence for {gap['field_label']}."),
+                    "field": gap.get("field", ""),
+                    "field_label": gap.get("field_label", ""),
+                    "severity": gap.get("severity", ""),
+                }
+            )
+
+        if actions:
+            return actions
+
+        return fallback_actions[:5]
+
+
+    def _build_readiness_summary(
+        self,
+        *,
+        score: int,
+        verdict: str,
+        total_gaps: int,
+        publication_blockers: int,
+    ) -> str:
+        if publication_blockers:
+            return (
+                f"Passport readiness is {verdict.replace('_', ' ')} ({score}/100). "
+                f"The audit found {publication_blockers} publication-blocking issue(s) "
+                f"and {total_gaps} total evidence gap(s)."
+            )
+
+        if total_gaps:
+            return (
+                f"Passport readiness is {verdict.replace('_', ' ')} ({score}/100). "
+                f"The audit found {total_gaps} evidence gap(s), but none are classified "
+                "as direct publication blockers."
+            )
+
+        return f"Passport readiness is {verdict.replace('_', ' ')} ({score}/100)."
+
+
+    def _field_label(self, field: str) -> str:
+        help_entry = _FIELD_HELP.get(field)
+        if help_entry is not None:
+            return help_entry[0]
+
+        leaf = field.split(".")[-1] if field else "field"
+        return self._split_identifier(leaf).title()
+
+
+    def _field_description(self, field: str) -> str:
+        help_entry = _FIELD_HELP.get(field)
+        if help_entry is not None:
+            return help_entry[1]
+
+        if field.startswith("dpp."):
+            return "A Digital Product Passport field that needs stronger evidence before publication."
+
+        return "A passport readiness field that needs stronger evidence before publication."
+
+
+    def _source_processes(self, source_agents: Any) -> list[dict[str, str]]:
+        processes = []
+        for agent in self._clean_string_list(source_agents):
+            processes.append(
+                {
+                    "name": agent,
+                    "label": _SOURCE_PROCESS_LABELS.get(
+                        agent,
+                        self._split_identifier(agent).title(),
+                    ),
+                }
+            )
+        return processes
+
+
+    def _owner_label(self, owner: str) -> str:
+        labels = {
+            "brand_owner": "Brand owner",
+            "manufacturer": "Manufacturer",
+            "supplier": "Supplier",
+            "internal_compliance": "Internal compliance",
+            "economic_operator": "Responsible economic operator",
+            "unknown": "Owner to assign",
+        }
+        return labels.get(owner, self._split_identifier(owner).title())
+
+
+    def _evidence_status_label(self, status: str) -> str:
+        labels = {
+            "absent": "No evidence yet",
+            "photo_only": "Photo evidence only",
+            "claim_only": "Claim without proof",
+            "document_present_unverified": "Document present but unverified",
+            "verified_documented": "Verified documented evidence",
+        }
+        return labels.get(status, self._split_identifier(status).title())
+
+
+    def _humanize_process_message(self, message: str) -> str:
+        cleaned = message
+        for internal_name, label in _SOURCE_PROCESS_LABELS.items():
+            cleaned = cleaned.replace(f"{internal_name}:", f"{label}:")
+            cleaned = cleaned.replace(internal_name, label)
+        return self._humanize_field_references(cleaned)
+
+
+    def _extract_field_path(self, text: str) -> str:
+        if not text:
+            return ""
+
+        for field in sorted(_FIELD_HELP, key=len, reverse=True):
+            if field in text:
+                return field
+
+        import re
+
+        match = re.search(r"dpp(?:\.[A-Za-z0-9_]+)+", text)
+        return match.group(0) if match else ""
+
+
+    def _humanize_field_references(self, text: str) -> str:
+        if not text:
+            return ""
+
+        result = text
+
+        for field in sorted(_FIELD_HELP, key=len, reverse=True):
+            result = result.replace(field, self._field_label(field))
+
+        import re
+
+        def replace_unknown(match: Any) -> str:
+            field = match.group(0)
+            return self._field_label(field)
+
+        return re.sub(r"dpp(?:\.[A-Za-z0-9_]+)+", replace_unknown, result)
+
+
+    def _split_identifier(self, value: str) -> str:
+        if not value:
+            return "field"
+
+        text = value.replace("_", " ").replace("-", " ")
+        chars = []
+        previous = ""
+
+        for char in text:
+            if previous and char.isupper() and (previous.islower() or previous.isdigit()):
+                chars.append(" ")
+            chars.append(char)
+            previous = char
+
+        return " ".join("".join(chars).split())
 
     def _normalize_score(self, value: Any) -> int:
         try:
