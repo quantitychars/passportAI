@@ -53,6 +53,7 @@ class PipelineState:
     artifact_paths: dict[str, Path] = field(default_factory=dict)
     package_url: str | None = None
     qr_url: str | None = None
+    qr_path: Path | None = None
     product_image_artifact_path: Path | None = None
 
     # Diagnostics
@@ -101,6 +102,7 @@ class PassportPipeline:
         - "dpp_generator"       # optional packaging artifact generator
         - "passport_renderer"   # optional human-readable DPP renderer
         - "gap_report"          # optional remediation report renderer
+        - "qr_generator"        # optional QR/data-carrier artifact generator
     """
 
     PRODUCT_IMAGE_ARTIFACT_STEM = "product_image"
@@ -110,9 +112,11 @@ class PassportPipeline:
         self,
         agents: dict[str, Any],
         storage: StorageProvider,
+        staging_output_dir: str | Path | None = None,
     ) -> None:
         self.agents = agents
         self.storage = storage
+        self.staging_output_dir = Path(staging_output_dir or "output")
 
     def run(
         self,
@@ -138,6 +142,7 @@ class PassportPipeline:
             self._run_packaging_step(state)
             self._run_passport_rendering_step(state)
             self._run_gap_report_step(state)
+            self._run_qr_generation_step(state)
             self._publish_artifact_package(state)
         except Exception as exc:
             state.errors.append(f"{type(exc).__name__}: {exc}")
@@ -217,18 +222,17 @@ class PassportPipeline:
             state.agent_outputs["lca"] = state.lca_result
 
         if gs1_agent is not None:
+            public_passport_url = self.storage.get_public_url(
+                state.passport_id,
+                "passport.html",
+            )
             state.gs1_result = gs1_agent.run(
                 product_group=product_group,
-                persistent_identifier_value=state.user_inputs.get(
-                    "persistent_identifier_value"
+                product_input=self._build_gs1_product_input(
+                    state=state,
+                    public_passport_url=public_passport_url,
                 ),
-                operator_identifier_value=state.user_inputs.get(
-                    "operator_identifier_value"
-                ),
-                facility_identifier_value=state.user_inputs.get(
-                    "facility_identifier_value"
-                ),
-                public_resolver_url=state.user_inputs.get("public_resolver_url"),
+                public_package_url=public_passport_url,
             )
             state.agent_outputs["gs1"] = state.gs1_result
 
@@ -289,7 +293,11 @@ class PassportPipeline:
         product_image_artifact = self._stage_product_image_reference(state)
         passport_public_url = self.storage.get_public_url(
             state.passport_id,
-            "passport.json",
+            "passport.html",
+        )
+        state.qr_url = self.storage.get_public_url(
+            state.passport_id,
+            "qr.png",
         )
 
         passport_json = dpp_generator.generate_from_reconciled_state(
@@ -409,6 +417,41 @@ class PassportPipeline:
 
         state.gap_report_path = report_path
         state.artifact_paths["gap_report.html"] = report_path
+
+
+    def _run_qr_generation_step(self, state: PipelineState) -> None:
+        """Step 7: generate QR/data-carrier artifact after passport URL is known.
+
+        Invariants:
+        - QR encodes the public human-readable passport URL.
+        - QR is a derived artifact, not product truth.
+        - QR generation must happen after passport.html exists and before package upload.
+        """
+        qr_generator = self.agents.get("qr_generator")
+        if qr_generator is None:
+            return
+
+        if "passport.html" not in state.artifact_paths:
+            state.warnings.append(
+                "QR generator is configured, but passport.html is missing; skipping QR artifact."
+            )
+            return
+
+        passport_public_url = self.storage.get_public_url(
+            state.passport_id,
+            "passport.html",
+        )
+
+        qr_path = qr_generator.generate(
+            target_url=passport_public_url,
+            output_dir=self._get_package_dir(state.passport_id),
+            passport_id=state.passport_id,
+            print_ready=True,
+        )
+
+        state.qr_path = qr_path
+        state.qr_url = self.storage.get_public_url(state.passport_id, "qr.png")
+        state.artifact_paths["qr.png"] = qr_path
 
 
     def _publish_artifact_package(self, state: PipelineState) -> None:
@@ -532,12 +575,109 @@ class PassportPipeline:
         reconciled: dict[str, Any],
         payload: dict[str, Any],
     ) -> None:
-        source_espr = payload.get("domain_data", {}).get("espr_core", {})
+        domain_data = payload.get("domain_data", {})
+        source_espr = domain_data.get("espr_core", {})
         target_espr = reconciled.setdefault("espr_core", {})
 
-        for key in ("identifiers_hint", "data_carrier_hint"):
-            if key in source_espr:
-                target_espr[key] = source_espr.get(key)
+        identifiers_hint = self._first_owned_mapping(
+            source_espr,
+            domain_data,
+            "identifiers_hint",
+        )
+        if identifiers_hint is not None:
+            target_espr["identifiers_hint"] = self._normalize_gs1_identifiers_hint(
+                identifiers_hint
+            )
+
+        data_carrier_hint = self._first_owned_mapping(
+            source_espr,
+            domain_data,
+            "data_carrier_hint",
+        )
+        if data_carrier_hint is not None:
+            target_espr["data_carrier_hint"] = dict(data_carrier_hint)
+
+    def _first_owned_mapping(
+        self,
+        primary: dict[str, Any],
+        fallback: dict[str, Any],
+        key: str,
+    ) -> dict[str, Any] | None:
+        value = primary.get(key)
+        if isinstance(value, dict):
+            return value
+
+        value = fallback.get(key)
+        if isinstance(value, dict):
+            return value
+
+        return None
+
+    def _normalize_gs1_identifiers_hint(
+        self,
+        identifiers_hint: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = dict(identifiers_hint)
+
+        persistent_value = (
+            normalized.get("persistent_identifier_value")
+            or normalized.get("persistent_product_identifier")
+        )
+        if persistent_value:
+            normalized["persistent_identifier_value"] = persistent_value
+
+        scheme = (
+            normalized.get("persistent_identifier_scheme")
+            or normalized.get("persistent_product_identifier_scheme")
+        )
+        if scheme:
+            normalized["persistent_identifier_scheme"] = scheme
+            if str(scheme).upper() == "GTIN" and persistent_value:
+                normalized.setdefault("gtin", persistent_value)
+
+        operator_value = (
+            normalized.get("operator_identifier_value")
+            or normalized.get("operator_identifier")
+        )
+        if operator_value:
+            normalized["operator_identifier_value"] = operator_value
+
+        facility_value = (
+            normalized.get("facility_identifier_value")
+            or normalized.get("facility_identifier")
+        )
+        if facility_value:
+            normalized["facility_identifier_value"] = facility_value
+
+        if "gtin_check_digit_verified" in normalized:
+            normalized["check_digit_verified"] = bool(
+                normalized.get("gtin_check_digit_verified")
+            )
+
+        return normalized
+
+    def _build_gs1_product_input(
+        self,
+        *,
+        state: PipelineState,
+        public_passport_url: str,
+    ) -> dict[str, Any]:
+        product_input = dict(state.user_inputs)
+
+        field_aliases = {
+            "persistent_identifier_value": "persistent_product_identifier",
+            "operator_identifier_value": "operator_identifier",
+            "facility_identifier_value": "facility_identifier",
+            "public_resolver_url": "resolver_url",
+        }
+        for source_key, target_key in field_aliases.items():
+            value = state.user_inputs.get(source_key)
+            if value and target_key not in product_input:
+                product_input[target_key] = value
+
+        product_input.setdefault("resolver_url", public_passport_url)
+        product_input.setdefault("carrier_value", public_passport_url)
+        return product_input
 
     def _apply_user_input_overlay(
         self,
@@ -575,7 +715,7 @@ class PassportPipeline:
         get_package_dir = getattr(self.storage, "get_package_dir", None)
         if callable(get_package_dir):
             return Path(get_package_dir(passport_id))
-        return Path("output") / passport_id
+        return self.staging_output_dir / passport_id
     
     def _write_passport_json_artifact(
         self,

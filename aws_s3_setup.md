@@ -223,3 +223,29 @@ storage.get_public_url(passport_id, "passport.html")
 ```
 
 Otherwise QR would point to localhost or a temporary URL and would need to be regenerated.
+
+## 11. Run the real demo with S3 publishing
+
+After the smoke test opens in the browser, run the full PassportAI demo with S3 storage:
+
+```cmd
+python scripts/run_demo_passport.py ^
+  --image demo_images\product_small.jpg ^
+  --description "Photo-only battery product for DPP readiness demo" ^
+  --product-group batteries ^
+  --brand-name "Demo Brand" ^
+  --storage s3 ^
+  --timeout 600
+```
+
+Expected output:
+
+```text
+"storage_mode": "s3"
+"package_url": "https://<bucket>.s3.<region>.amazonaws.com/passports/<passport_id>/passport.html"
+```
+
+The local `output/<passport_id>/` directory is still used as a staging folder before upload.
+Do not delete it during generation.
+
+The next block is QR generation. QR must use the final `package_url` / public passport HTML URL.

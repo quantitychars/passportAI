@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,8 +28,28 @@ from src.core.gap_report import GapReportGenerator
 from src.core.passport_renderer import PassportRenderer
 from src.core.gemma_client import GemmaClient, GemmaClientError
 from src.core.pipeline import PassportPipeline
+from src.core.qr_generator import QRCodeGenerator
+from src.storage.aws_s3 import S3Storage
 from src.storage.local import LocalStorage
 
+
+
+def _resolve_storage_mode(cli_value: str | None) -> str:
+    raw = (cli_value or os.getenv("STORAGE_MODE") or "local").strip().lower()
+    if raw not in {"local", "s3"}:
+        raise ValueError(
+            f"Unsupported storage mode {raw!r}. Expected one of: local, s3."
+        )
+    return raw
+
+
+def _build_storage(args: argparse.Namespace):
+    mode = _resolve_storage_mode(getattr(args, "storage", None))
+
+    if mode == "local":
+        return LocalStorage(output_dir=args.output_dir), mode
+
+    return S3Storage(), mode
 
 def _build_user_inputs(args: argparse.Namespace) -> dict[str, Any]:
     user_inputs: dict[str, Any] = {}
@@ -97,6 +118,15 @@ def main() -> int:
     parser.add_argument("--public-resolver-url")
     parser.add_argument("--output-dir", default="output", type=Path)
     parser.add_argument(
+        "--storage",
+        choices=["local", "s3"],
+        default=None,
+        help=(
+            "Artifact storage backend. Defaults to STORAGE_MODE env var or local. "
+            "Use s3 after AWS_S3_BUCKET/AWS_REGION credentials are configured."
+        ),
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=600,
@@ -127,7 +157,11 @@ def main() -> int:
         )
         return 2
 
-    storage = LocalStorage(output_dir=args.output_dir)
+    try:
+        storage, storage_mode = _build_storage(args)
+    except (ImportError, ValueError) as exc:
+        print(f"ERROR: storage setup failed: {exc}", file=sys.stderr)
+        return 2
 
     pipeline = PassportPipeline(
         agents={
@@ -144,8 +178,10 @@ def main() -> int:
             "dpp_generator": DPPGenerator(client=None),
             "passport_renderer": PassportRenderer(),
             "gap_report": GapReportGenerator(client=None),
+            "qr_generator": QRCodeGenerator(),
         },
         storage=storage,
+        staging_output_dir=args.output_dir,
     )
 
     result = pipeline.run(
@@ -167,6 +203,7 @@ def main() -> int:
         "readiness_verdict": result.readiness_verdict,
         "is_publishable": result.is_publishable,
         "package_url": result.package_url,
+        "storage_mode": storage_mode,
         "artifacts": {
             name: str(path)
             for name, path in result.artifact_paths.items()
@@ -183,6 +220,9 @@ def main() -> int:
     print("\nGenerated artifacts:")
     for name, path in result.artifact_paths.items():
         print(f"- {name}: {path}")
+
+    if result.package_url:
+        print(f"\nPublic passport URL: {result.package_url}")
 
     return 0
 

@@ -34,6 +34,26 @@ class _DummyStorage(StorageProvider):
         return self.output_dir / passport_id
 
 
+class _UploadOnlyStorage(StorageProvider):
+    """Storage provider that uploads files but does not expose a local package dir."""
+
+    def __init__(self):
+        self.saved_files: dict[str, dict[str, Path]] = {}
+
+    def save_package(self, passport_id: str, files: dict[str, Path]) -> str:
+        self.saved_files[passport_id] = dict(files)
+        return self.get_public_url(passport_id, "passport.html")
+
+    def get_public_url(self, passport_id: str, filename: str) -> str:
+        return f"https://cdn.example.test/passports/{passport_id}/{filename}"
+
+    def file_exists(self, passport_id: str, filename: str) -> bool:
+        return False
+
+    def delete_package(self, passport_id: str) -> None:
+        return None
+
+
 class _StubVisionAgent:
     def run(self, **kwargs):
         return {
@@ -382,7 +402,24 @@ class _StubGapReportGenerator:
             encoding="utf-8",
         )
         return report_path
-    
+
+
+class _StubQRGenerator:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.last_kwargs = None
+
+    def generate(self, **kwargs):
+        self.last_kwargs = kwargs
+        if self.fail:
+            raise RuntimeError("qr generation failed")
+
+        output_dir = Path(kwargs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        qr_path = output_dir / "qr.png"
+        qr_path.write_bytes(b"fake-qr")
+        return qr_path
+
 
 def test_pipeline_runs_reconciled_audit_flow_without_dpp_generator(tmp_path):
     image_path = tmp_path / "product.jpg"
@@ -507,7 +544,7 @@ def test_pipeline_packages_dpp_from_reconciled_state(tmp_path):
     assert dpp_generator.last_kwargs["reconciled_domain_data"] == result.reconciled_domain_data
     assert dpp_generator.last_kwargs["audit_payload"]["assessment"]["readiness_verdict"] == "ready"
     assert dpp_generator.last_kwargs["passport_id"] == result.passport_id
-    assert dpp_generator.last_kwargs["public_package_url"].endswith("/passport.json")
+    assert dpp_generator.last_kwargs["public_package_url"].endswith("/passport.html")
     assert dpp_generator.last_kwargs["reconciled_domain_data"]["espr_core"]["product_image_url"] == "product_image.jpg"
 
     raw_agent_fields = {
@@ -653,6 +690,113 @@ def test_pipeline_generates_passport_html_from_passport_json(tmp_path):
         "passport.html": passport_html_path,
         "gap_report.html": gap_report_path,
     }
+
+
+
+def test_pipeline_uses_staging_output_dir_for_upload_only_storage(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _UploadOnlyStorage()
+    dpp_generator = _StubDPPGenerator()
+    passport_renderer = _StubPassportRenderer()
+    gap_report_generator = _StubGapReportGenerator()
+    staging_dir = tmp_path / "staging"
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+            "passport_renderer": passport_renderer,
+            "gap_report": gap_report_generator,
+        },
+        storage=storage,
+        staging_output_dir=staging_dir,
+    )
+
+    result = pipeline.run(
+        image_path=image_path,
+        description="photo-only textile product",
+        user_inputs={"brand_name": "User Brand"},
+    )
+
+    assert result.success is True
+    assert result.package_url == (
+        f"https://cdn.example.test/passports/{result.passport_id}/passport.html"
+    )
+
+    expected_package_dir = staging_dir / result.passport_id
+    assert result.artifact_paths["passport.json"] == expected_package_dir / "passport.json"
+    assert result.artifact_paths["passport.html"] == expected_package_dir / "passport.html"
+    assert result.artifact_paths["gap_report.html"] == expected_package_dir / "gap_report.html"
+    assert result.artifact_paths["product_image.jpg"] == expected_package_dir / "product_image.jpg"
+
+    assert storage.saved_files[result.passport_id] == result.artifact_paths
+    assert dpp_generator.last_kwargs["public_package_url"] == (
+        f"https://cdn.example.test/passports/{result.passport_id}/passport.html"
+    )
+
+def test_pipeline_generates_qr_after_passport_html_and_before_publish(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"fake-image")
+
+    storage = _UploadOnlyStorage()
+    dpp_generator = _StubDPPGenerator()
+    passport_renderer = _StubPassportRenderer()
+    gap_report_generator = _StubGapReportGenerator()
+    qr_generator = _StubQRGenerator()
+    staging_dir = tmp_path / "staging"
+
+    pipeline = PassportPipeline(
+        agents={
+            "vision": _StubVisionAgent(),
+            "regulatory": _StubRegulatoryAgent(),
+            "legal": _StubLegalAgent(),
+            "lca": _StubLCAAgent(),
+            "gs1": _StubGS1Agent(),
+            "audit": _StubAuditAgent(),
+            "dpp_generator": dpp_generator,
+            "passport_renderer": passport_renderer,
+            "gap_report": gap_report_generator,
+            "qr_generator": qr_generator,
+        },
+        storage=storage,
+        staging_output_dir=staging_dir,
+    )
+
+    result = pipeline.run(
+        image_path=image_path,
+        description="photo-only textile product",
+        user_inputs={"brand_name": "User Brand"},
+    )
+
+    assert result.success is True
+    assert result.qr_url == (
+        f"https://cdn.example.test/passports/{result.passport_id}/qr.png"
+    )
+
+    expected_package_dir = staging_dir / result.passport_id
+    assert result.artifact_paths["qr.png"] == expected_package_dir / "qr.png"
+    assert result.artifact_paths["qr.png"].read_bytes() == b"fake-qr"
+
+    assert qr_generator.last_kwargs == {
+        "target_url": f"https://cdn.example.test/passports/{result.passport_id}/passport.html",
+        "output_dir": expected_package_dir,
+        "passport_id": result.passport_id,
+        "print_ready": True,
+    }
+
+    assert storage.saved_files[result.passport_id] == result.artifact_paths
+    assert "qr.png" in storage.saved_files[result.passport_id]
+    assert dpp_generator.last_kwargs["qr_url"] == (
+        f"https://cdn.example.test/passports/{result.passport_id}/qr.png"
+    )
+
 
 def test_pipeline_fails_closed_when_dpp_validation_fails(tmp_path):
     image_path = tmp_path / "product.jpg"
