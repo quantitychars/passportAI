@@ -314,6 +314,7 @@ class _StubDPPGenerator:
                             "productName": "Photo-derived tote bag",
                             "brandName": "User Brand",
                             "productDescription": "photo-only textile product",
+                            "productImageUrl": kwargs["reconciled_domain_data"]["espr_core"].get("product_image_url"),
                             "esprCategory": product_group,
                         },
                         "identifiers": {},
@@ -492,13 +493,22 @@ def test_pipeline_packages_dpp_from_reconciled_state(tmp_path):
     assert artifact_path == tmp_path / "output" / result.passport_id / "passport.json"
     assert artifact_path.exists()
     assert json.loads(artifact_path.read_text(encoding="utf-8")) == result.passport_json
-    assert storage.saved_files[result.passport_id] == {"passport.json": artifact_path}
+    product_image_path = result.artifact_paths["product_image.jpg"]
+    assert product_image_path == tmp_path / "output" / result.passport_id / "product_image.jpg"
+    assert product_image_path.exists()
+    assert product_image_path.read_bytes() == b"fake-image"
+    assert result.passport_json["credentialSubject"]["dpp"]["regulatedCore"]["productIdentity"]["productImageUrl"] == "product_image.jpg"
+    assert storage.saved_files[result.passport_id] == {
+        "product_image.jpg": product_image_path,
+        "passport.json": artifact_path,
+    }
 
     assert dpp_generator.last_kwargs is not None
     assert dpp_generator.last_kwargs["reconciled_domain_data"] == result.reconciled_domain_data
     assert dpp_generator.last_kwargs["audit_payload"]["assessment"]["readiness_verdict"] == "ready"
     assert dpp_generator.last_kwargs["passport_id"] == result.passport_id
     assert dpp_generator.last_kwargs["public_package_url"].endswith("/passport.json")
+    assert dpp_generator.last_kwargs["reconciled_domain_data"]["espr_core"]["product_image_url"] == "product_image.jpg"
 
     raw_agent_fields = {
         "vision_result",
@@ -544,9 +554,11 @@ def test_pipeline_generates_gap_report_from_audit_result(tmp_path):
     assert result.package_url == f"http://example.test/{result.passport_id}"
 
     passport_path = result.artifact_paths["passport.json"]
+    product_image_path = result.artifact_paths["product_image.jpg"]
     gap_report_path = result.artifact_paths["gap_report.html"]
 
     assert passport_path.exists()
+    assert product_image_path.exists()
     assert gap_report_path == tmp_path / "output" / result.passport_id / "gap_report.html"
     assert gap_report_path.exists()
     assert result.artifact_paths["gap_report.html"] == gap_report_path
@@ -569,6 +581,7 @@ def test_pipeline_generates_gap_report_from_audit_result(tmp_path):
     assert forbidden_gap_report_inputs.isdisjoint(gap_report_generator.last_kwargs)
 
     assert storage.saved_files[result.passport_id] == {
+        "product_image.jpg": product_image_path,
         "passport.json": passport_path,
         "gap_report.html": gap_report_path,
     }
@@ -607,10 +620,12 @@ def test_pipeline_generates_passport_html_from_passport_json(tmp_path):
     assert result.passport_json is not None
 
     passport_json_path = result.artifact_paths["passport.json"]
+    product_image_path = result.artifact_paths["product_image.jpg"]
     passport_html_path = result.artifact_paths["passport.html"]
     gap_report_path = result.artifact_paths["gap_report.html"]
 
     assert passport_json_path.exists()
+    assert product_image_path.exists()
     assert passport_html_path == tmp_path / "output" / result.passport_id / "passport.html"
     assert passport_html_path.exists()
     assert gap_report_path.exists()
@@ -633,6 +648,7 @@ def test_pipeline_generates_passport_html_from_passport_json(tmp_path):
     assert forbidden_renderer_inputs.isdisjoint(passport_renderer.last_kwargs)
 
     assert storage.saved_files[result.passport_id] == {
+        "product_image.jpg": product_image_path,
         "passport.json": passport_json_path,
         "passport.html": passport_html_path,
         "gap_report.html": gap_report_path,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,7 @@ class PipelineState:
     artifact_paths: dict[str, Path] = field(default_factory=dict)
     package_url: str | None = None
     qr_url: str | None = None
+    product_image_artifact_path: Path | None = None
 
     # Diagnostics
     warnings: list[str] = field(default_factory=list)
@@ -100,6 +102,9 @@ class PassportPipeline:
         - "passport_renderer"   # optional human-readable DPP renderer
         - "gap_report"          # optional remediation report renderer
     """
+
+    PRODUCT_IMAGE_ARTIFACT_STEM = "product_image"
+    SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
     def __init__(
         self,
@@ -281,6 +286,7 @@ class PassportPipeline:
             state.audit_result,
             "DataAuditAgent",
         )
+        product_image_artifact = self._stage_product_image_reference(state)
         passport_public_url = self.storage.get_public_url(
             state.passport_id,
             "passport.json",
@@ -299,6 +305,14 @@ class PassportPipeline:
             rendered_errors = "; ".join(validation_errors) or "unknown validation error"
             raise RuntimeError(f"DPPGenerator validation failed: {rendered_errors}")
 
+        if product_image_artifact is not None:
+            self._copy_product_image_artifact(
+                source_path=state.image_path,
+                artifact_path=product_image_artifact,
+            )
+            state.product_image_artifact_path = product_image_artifact
+            state.artifact_paths[product_image_artifact.name] = product_image_artifact
+
         artifact_path = self._write_passport_json_artifact(
             passport_id=state.passport_id,
             passport_json=passport_json,
@@ -306,6 +320,47 @@ class PassportPipeline:
 
         state.passport_json = passport_json
         state.artifact_paths["passport.json"] = artifact_path
+
+    def _stage_product_image_reference(self, state: PipelineState) -> Path | None:
+        """Make product image path package-relative before DPP JSON generation.
+
+        DPPGenerator must receive a path that works from inside the generated
+        output/{passport_id}/ package. The actual file copy happens only after
+        DPP validation passes, so failed generation does not publish partial
+        artifact sets.
+        """
+        if not isinstance(state.reconciled_domain_data, dict):
+            return None
+
+        suffix = self._normalized_image_suffix(state.image_path)
+        artifact_name = f"{self.PRODUCT_IMAGE_ARTIFACT_STEM}{suffix}"
+        artifact_path = self._get_package_dir(state.passport_id) / artifact_name
+
+        espr_core = state.reconciled_domain_data.setdefault("espr_core", {})
+        espr_core["product_image_url"] = artifact_name
+        return artifact_path
+
+    def _normalized_image_suffix(self, image_path: Path) -> str:
+        suffix = image_path.suffix.lower()
+        if suffix in self.SUPPORTED_IMAGE_SUFFIXES:
+            return suffix
+        return ".jpg"
+
+    def _copy_product_image_artifact(
+        self,
+        *,
+        source_path: Path,
+        artifact_path: Path,
+    ) -> None:
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        if source_path.resolve() == artifact_path.resolve():
+            return
+        try:
+            shutil.copy2(str(source_path), str(artifact_path))
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to copy product image into passport package: {exc}"
+            ) from exc
     
     def _run_passport_rendering_step(self, state: PipelineState) -> None:
         """Step 5: render a human-readable Digital Product Passport artifact.

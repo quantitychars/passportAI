@@ -117,7 +117,8 @@ class VisionAgent(BaseAgent):
             "serial, supplier, or country facts. "
             "Return exactly one JSON object matching the provided schema. "
             "Use empty arrays when evidence is absent. "
-            "Use null nowhere. Use 'unknown' when category is not supported. "
+            "Use null only for dimensions that cannot be estimated. "
+            "Use 'unknown' when category is not supported. "
             "Do not include markdown, comments, explanations, or trailing prose."
         )
 
