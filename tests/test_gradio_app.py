@@ -200,3 +200,52 @@ def test_build_interface_returns_gradio_blocks():
     interface = gradio_app.build_interface()
 
     assert interface is not None
+
+
+def test_actions_use_package_url_not_public_url_wording():
+    html = gradio_app._build_actions_html(None)
+
+    assert "Open Package URL" in html
+    assert "Open Public URL" not in html
+    assert "cloud" not in html.lower()
+
+
+def test_run_summary_separates_readiness_from_storage(tmp_path):
+    result = _fake_result(tmp_path)
+
+    summary = gradio_app._format_run_summary(
+        result,
+        runtime_mode="demo_mock",
+        storage_mode="s3",
+        zip_path=None,
+    )
+
+    assert "#### Readiness" in summary
+    assert "#### Storage" in summary
+    assert "Package URL" in summary
+    assert "cloud" not in summary.lower()
+
+
+def test_chat_messages_use_gradio_messages_format(tmp_path):
+    image_path = tmp_path / "product.jpg"
+    image_path.write_bytes(b"image")
+    fake_pipeline = _FakePipeline(_fake_result(tmp_path))
+
+    def pipeline_factory(**kwargs):
+        return fake_pipeline, "local"
+
+    view = gradio_app.run_generation(
+        image_path=image_path,
+        description="Battery pack",
+        product_group="batteries",
+        brand_name="Demo Brand",
+        runtime_mode="demo_mock",
+        storage_mode="local",
+        output_dir=tmp_path / "output",
+        pipeline_factory=pipeline_factory,
+    )
+
+    assert view.messages
+    assert isinstance(view.messages[0], dict)
+    assert set(view.messages[0]) == {"role", "content"}
+    assert view.messages[0]["role"] == "assistant"

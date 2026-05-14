@@ -46,33 +46,34 @@ PROGRESS_EVENTS = [
     "Rendering passport.html",
     "Rendering gap_report.html",
     "Generating qr.png",
-    "Uploading artifacts to storage",
+    "Publishing passport page to selected storage",
     "Finalizing package",
 ]
 
 EMPTY_STATE_GUIDANCE = """
-<div class=\"pa-empty\">
+<div class="pa-empty">
+  <div class="pa-kicker">PassportAI workspace</div>
   <h2>Create a Digital Product Passport</h2>
-  <p>Upload a product photo, add product basics, and generate a passport package.</p>
-  <div class=\"pa-empty-grid\">
+  <p class="pa-lead">Upload a product photo, add basic product evidence, and generate a reviewable passport package.</p>
+  <div class="pa-empty-grid">
     <section>
-      <h3>How to ask</h3>
+      <h3>Start with</h3>
       <ul>
-        <li>Create a battery passport from this product photo.</li>
-        <li>Analyze this textile product and generate a gap report.</li>
-        <li>Generate a draft passport and tell me what is missing for publication.</li>
+        <li>Product photo</li>
+        <li>Product group and brand</li>
+        <li>Short product description</li>
       </ul>
     </section>
     <section>
-      <h3>What you can provide</h3>
+      <h3>PassportAI checks</h3>
       <ul>
-        <li>Product photo, group, brand, and description.</li>
-        <li>Identifiers such as GTIN or operator ID.</li>
-        <li>Supplier evidence and technical documentation references.</li>
+        <li>Visible product evidence</li>
+        <li>Legal and sustainability evidence gaps</li>
+        <li>Identifier and QR readiness</li>
       </ul>
     </section>
     <section>
-      <h3>What PassportAI generates</h3>
+      <h3>Generated locally</h3>
       <ul>
         <li>passport.html</li>
         <li>passport.json</li>
@@ -83,6 +84,28 @@ EMPTY_STATE_GUIDANCE = """
   </div>
 </div>
 """
+
+PASSPORT_PLACEHOLDER = """
+<section class="pa-preview-empty pa-document-placeholder">
+  <h3>Passport preview</h3>
+  <p>The human-readable Digital Product Passport will appear here after generation.</p>
+</section>
+"""
+
+GAP_REPORT_PLACEHOLDER = """
+<section class="pa-preview-empty pa-document-placeholder">
+  <h3>Gap report preview</h3>
+  <p>The remediation report will appear here after generation. It stays a review artifact for the user, not the public passport page.</p>
+</section>
+"""
+
+QR_PLACEHOLDER = """
+<section class="pa-preview-empty pa-document-placeholder">
+  <h3>QR preview</h3>
+  <p>The QR code will appear here after PassportAI knows the passport page URL.</p>
+</section>
+"""
+
 
 
 @dataclass(frozen=True)
@@ -100,7 +123,7 @@ class S3UIConfig:
 @dataclass
 class UIRunView:
     success: bool
-    messages: list[tuple[str, str]] = field(default_factory=list)
+    messages: list[dict[str, str]] = field(default_factory=list)
     progress_html: str = ""
     passport_preview_html: str = ""
     gap_report_preview_html: str = ""
@@ -110,6 +133,10 @@ class UIRunView:
     actions_html: str = ""
     zip_path: str | None = None
     state: dict[str, Any] = field(default_factory=dict)
+
+
+def _chat_message(content: str, role: str = "assistant") -> dict[str, str]:
+    return {"role": role, "content": str(content)}
 
 
 class DemoVisionAgent:
@@ -492,10 +519,10 @@ def _build_artifact_links(result: Any) -> dict[str, str]:
             links[name] = uri
 
     if getattr(result, "package_url", None):
-        links["public_passport_url"] = str(result.package_url)
+        links["package_url"] = str(result.package_url)
 
     if getattr(result, "qr_url", None):
-        links["public_qr_url"] = str(result.qr_url)
+        links["qr_url"] = str(result.qr_url)
 
     return links
 
@@ -505,12 +532,12 @@ def _build_actions_html(result: Any | None) -> str:
     if result is None or not getattr(result, "success", False):
         return """
         <div class=\"pa-actions disabled\">
-          <h3>Workspace Tools</h3>
+          <h3>Workspace tools</h3>
           <button disabled>Open Passport</button>
           <button disabled>Open Gap Report</button>
           <button disabled>Download JSON</button>
           <button disabled>Download ZIP</button>
-          <button disabled>Open Public URL</button>
+          <button disabled>Open Package URL</button>
           <p>Generate a passport first.</p>
         </div>
         """
@@ -526,10 +553,10 @@ def _build_actions_html(result: Any | None) -> str:
 
     add_link("Open Passport", "passport.html", action_state["open_passport"])
     add_link("Open Gap Report", "gap_report.html", action_state["open_gap_report"])
-    add_link("Open Public URL", "public_passport_url", action_state["open_public_url"])
-    add_link("Open QR", "qr.png", "qr.png" in links)
+    add_link("Open Package URL", "package_url", action_state["open_public_url"])
+    add_link("Open Local QR", "qr.png", "qr.png" in links)
 
-    return "<div class='pa-actions'><h3>Workspace Tools</h3>" + "".join(rows) + "</div>"
+    return "<div class='pa-actions'><h3>Workspace tools</h3>" + "".join(rows) + "</div>"
 
 
 def _format_progress_html(events: list[dict[str, str]]) -> str:
@@ -552,25 +579,41 @@ def _failed_progress_events(message: str) -> list[dict[str, str]]:
     return events
 
 
+def _format_readiness_label(value: Any) -> str:
+    return str(value if value is not None else "unknown").replace("_", " ").title()
+
+
 def _format_run_summary(result: Any | None, *, runtime_mode: str, storage_mode: str, zip_path: str | None) -> str:
     if result is None:
         return "No run has completed yet."
 
+    readiness_verdict = getattr(result, "readiness_verdict", None)
+    readiness_score = getattr(result, "readiness_score", None)
+    is_publishable = getattr(result, "is_publishable", None)
+    package_url = getattr(result, "package_url", None)
+    qr_url = getattr(result, "qr_url", None)
+
     lines = [
-        f"### Run Summary",
+        "### Run Summary",
+        "",
+        "#### Readiness",
+        f"- Verdict: `{_format_readiness_label(readiness_verdict)}`",
+        f"- Score: `{readiness_score}`",
+        f"- Eligible for publication: `{is_publishable}`",
+        "",
+        "#### Storage",
+        f"- Mode: `{storage_mode}`",
+        f"- Package URL: `{package_url}`",
+        f"- QR URL: `{qr_url}`",
+        "",
+        "#### Run",
         f"- Runtime mode: `{runtime_mode}`",
-        f"- Storage mode: `{storage_mode}`",
         f"- Passport ID: `{getattr(result, 'passport_id', 'n/a')}`",
         f"- Success: `{getattr(result, 'success', False)}`",
-        f"- Readiness score: `{getattr(result, 'readiness_score', None)}`",
-        f"- Readiness verdict: `{getattr(result, 'readiness_verdict', None)}`",
-        f"- Publishable: `{getattr(result, 'is_publishable', None)}`",
-        f"- Package URL: `{getattr(result, 'package_url', None)}`",
-        f"- QR URL: `{getattr(result, 'qr_url', None)}`",
     ]
 
     if zip_path:
-        lines.append(f"- ZIP: `{zip_path}`")
+        lines.append(f"- Local ZIP: `{zip_path}`")
 
     warnings = getattr(result, "warnings", []) or []
     errors = getattr(result, "errors", []) or []
@@ -635,10 +678,10 @@ def run_generation(
         )
         return UIRunView(
             success=False,
-            messages=[("PassportAI", "Generation was not started because required inputs are missing.")],
+            messages=[_chat_message("Generation was not started because required inputs are missing.")],
             progress_html=_format_progress_html(progress_events),
-            passport_preview_html=EMPTY_STATE_GUIDANCE,
-            gap_report_preview_html="",
+            passport_preview_html=PASSPORT_PLACEHOLDER,
+            gap_report_preview_html=GAP_REPORT_PLACEHOLDER,
             passport_json=None,
             qr_path=None,
             run_summary_markdown="\n".join(f"- {error}" for error in validation_errors),
@@ -705,10 +748,10 @@ def run_generation(
         )
         return UIRunView(
             success=False,
-            messages=[("PassportAI", error_message)],
+            messages=[_chat_message(error_message)],
             progress_html=_format_progress_html(progress_events),
-            passport_preview_html=EMPTY_STATE_GUIDANCE,
-            gap_report_preview_html="",
+            passport_preview_html=PASSPORT_PLACEHOLDER,
+            gap_report_preview_html=GAP_REPORT_PLACEHOLDER,
             passport_json=None,
             qr_path=None,
             run_summary_markdown=f"Generation failed: `{error_message}`",
@@ -787,7 +830,7 @@ def run_generation(
 
     return UIRunView(
         success=bool(getattr(result, "success", False)) and not live_vision_failed,
-        messages=[("PassportAI", message_content)],
+        messages=[_chat_message(message_content)],
         progress_html=_format_progress_html(progress_events),
         passport_preview_html=_artifact_html_preview(passport_path, title="Passport"),
         gap_report_preview_html=_artifact_html_preview(gap_path, title="Gap Report"),
@@ -875,10 +918,10 @@ def _gradio_generate(
     )
 
     yield (
-        [("PassportAI", "Passport generation started.")],
+        [_chat_message("Passport generation started.", role="assistant")],
         _format_progress_html(running_state["progress_events"]),
-        EMPTY_STATE_GUIDANCE,
-        "",
+        PASSPORT_PLACEHOLDER,
+        GAP_REPORT_PLACEHOLDER,
         None,
         None,
         "Generation running...",
@@ -936,22 +979,59 @@ def _gradio_generate(
 
 def _ui_css() -> str:
     return """
-    .pa-empty { padding: 28px; border: 1px solid #e5e7eb; border-radius: 24px; background: #fff; }
-    .pa-empty h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 32px; margin: 0 0 8px; }
-    .pa-empty-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
-    .pa-empty section { border: 1px solid #e5e7eb; border-radius: 18px; padding: 14px; background: #fafafa; }
-    .pa-progress { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
-    .pa-step { border: 1px solid #e5e7eb; border-radius: 14px; padding: 10px 12px; background: #fff; }
-    .pa-step span { display: inline-block; min-width: 76px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #667085; }
-    .pa-step-completed { border-color: #bbf7d0; background: #f0fdf4; }
-    .pa-step-running { border-color: #bfdbfe; background: #eff6ff; }
-    .pa-step-failed { border-color: #fecaca; background: #fef2f2; }
-    .pa-actions { display: grid; gap: 10px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; }
-    .pa-actions h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: #667085; }
-    .pa-tool { display: block; width: 100%; border: 1px solid #d1d5db; border-radius: 12px; padding: 10px 12px; background: #fff; color: #111827; text-decoration: none; font-weight: 700; text-align: left; }
-    .pa-tool:disabled, .pa-actions.disabled button { opacity: .48; cursor: not-allowed; }
-    .pa-preview-empty { padding: 24px; border: 1px dashed #d1d5db; border-radius: 18px; background: #fafafa; }
-    @media (max-width: 960px) { .pa-empty-grid { grid-template-columns: 1fr; } }
+    :root {
+      --pa-navy: #0f172a;
+      --pa-muted: #667085;
+      --pa-line: #e5e7eb;
+      --pa-soft: #f8fafc;
+      --pa-green: #047857;
+      --pa-green-soft: #ecfdf5;
+      --pa-blue-soft: #eff6ff;
+      --pa-red-soft: #fef2f2;
+    }
+    .gradio-container { background: #f6f7fb !important; }
+    #component-0, .main { max-width: 1500px !important; margin: 0 auto !important; }
+    .pa-empty, .pa-actions, .pa-preview-empty {
+      border: 1px solid var(--pa-line);
+      border-radius: 22px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    }
+    .pa-empty { padding: 26px; }
+    .pa-kicker { color: var(--pa-green); font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 8px; }
+    .pa-empty h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 34px; line-height: 1.05; margin: 0 0 8px; color: var(--pa-navy); }
+    .pa-lead { color: #475467; margin: 0; max-width: 780px; }
+    .pa-empty-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .pa-empty section { border: 1px solid var(--pa-line); border-radius: 18px; padding: 14px; background: #fbfcfe; }
+    .pa-empty h3, .pa-preview-empty h3 { margin: 0 0 8px; color: var(--pa-navy); }
+    .pa-empty ul { margin: 0; padding-left: 18px; color: #344054; }
+    .pa-progress { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 0; list-style: none; }
+    .pa-step { border: 1px solid var(--pa-line); border-radius: 14px; padding: 9px 11px; background: #fff; color: #344054; font-size: 13px; }
+    .pa-step span { display: inline-block; min-width: 76px; font-size: 10px; font-weight: 900; text-transform: uppercase; color: var(--pa-muted); letter-spacing: .08em; }
+    .pa-step-completed { border-color: #bbf7d0; background: var(--pa-green-soft); }
+    .pa-step-running { border-color: #bfdbfe; background: var(--pa-blue-soft); }
+    .pa-step-failed { border-color: #fecaca; background: var(--pa-red-soft); }
+    .pa-actions { display: grid; gap: 8px; padding: 14px; }
+    .pa-actions h3 { margin: 0 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--pa-muted); }
+    .pa-tool, .pa-actions button {
+      display: block;
+      width: 100%;
+      border: 1px solid #d0d5dd;
+      border-radius: 999px;
+      padding: 9px 13px;
+      background: #fff;
+      color: var(--pa-navy);
+      text-decoration: none;
+      font-weight: 750;
+      text-align: center;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .pa-tool:hover { border-color: var(--pa-navy); box-shadow: 0 4px 14px rgba(15,23,42,.08); }
+    .pa-actions.disabled button { opacity: .42; cursor: not-allowed; background: #f2f4f7; }
+    .pa-actions p { margin: 2px 0 0; color: var(--pa-muted); font-size: 12px; }
+    .pa-preview-empty { padding: 28px; color: #475467; }
+    .pa-document-placeholder { min-height: 220px; display: flex; flex-direction: column; justify-content: center; }
+    @media (max-width: 1100px) { .pa-progress, .pa-empty-grid { grid-template-columns: 1fr; } }
     """
 
 
@@ -963,14 +1043,13 @@ def build_interface():
 
     with gr.Blocks(
         title="PassportAI",
-        css=_ui_css(),
     ) as interface:
         state = gr.State(build_initial_ui_state())
 
         gr.Markdown(
             """
             # PassportAI
-            Digital Product Passport workspace for photo-to-passport generation, evidence review, cloud publishing, and QR packaging.
+            Digital Product Passport workspace for photo-to-passport generation, evidence review, S3 hosting, and QR packaging.
             """
         )
 
@@ -1047,9 +1126,9 @@ def build_interface():
 
                 with gr.Tabs():
                     with gr.Tab("Passport"):
-                        passport_preview_html = gr.HTML(value=EMPTY_STATE_GUIDANCE)
+                        passport_preview_html = gr.HTML(value=PASSPORT_PLACEHOLDER)
                     with gr.Tab("Gap Report"):
-                        gap_report_preview_html = gr.HTML(value="")
+                        gap_report_preview_html = gr.HTML(value=GAP_REPORT_PLACEHOLDER)
                     with gr.Tab("JSON"):
                         passport_json = gr.JSON(label="passport.json")
                     with gr.Tab("QR"):
@@ -1111,4 +1190,4 @@ def build_interface():
 if __name__ == "__main__":
     port = int(os.getenv("GRADIO_PORT", "7860"))
     app = build_interface()
-    app.launch(server_name="127.0.0.1", server_port=port, share=False)
+    app.launch(server_name="127.0.0.1", server_port=port, share=False, css=_ui_css())
