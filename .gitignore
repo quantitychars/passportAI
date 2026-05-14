@@ -8,7 +8,7 @@
 *.key
 
 # ---- Generated Output ----
-output/
+output/*
 !output/.gitkeep
 
 # ---- Python ----
@@ -79,10 +79,6 @@ Thumbs.db
 *.log
 logs/
 
-# ---- rembg Model Cache ----
-# rembg downloads U2Net model on first run (~170MB)
-# It is cached here — do not commit
-.u2net/
 
 # ---- AWS ----
 .aws/
@@ -98,3 +94,5 @@ temp/
 # Do not commit model files if accidentally placed here
 *.gguf
 *.bin
+.vs/
+

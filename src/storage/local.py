@@ -1,21 +1,21 @@
 """
 src/storage/local.py — Local Filesystem Storage Provider
 
-Saves DPP package files to the local output/ directory and
-serves them via FastAPI on localhost.
+Saves DPP package files to the local output/ directory.
+The Gradio UI exposes the package as a downloadable ZIP.
 
 Directory structure:
     output/{passport_id}/
         passport.json
-        photo.png
+        product_image.<ext>
         passport.html
-        gap_report.pdf
+        gap_report.html
         qr.png              ← saved last
 
 Public URLs use the HOSTING_URL env var as base:
-    http://localhost:8000/{passport_id}
-    http://localhost:8000/{passport_id}/photo
-    http://localhost:8000/{passport_id}/html
+    http://localhost:7860/{passport_id}
+    http://localhost:7860/{passport_id}/photo
+    http://localhost:7860/{passport_id}/html
 
 Usage:
     from src.storage.local import LocalStorage
@@ -38,7 +38,7 @@ class LocalStorage(StorageProvider):
 
     Attributes:
         output_dir: Base directory for all passport packages.
-        hosting_url: Base URL for serving files (e.g., "http://localhost:8000").
+        hosting_url: Optional base URL used for generated package URLs (e.g., "http://localhost:7860").
     """
 
     def __init__(
@@ -52,13 +52,13 @@ class LocalStorage(StorageProvider):
             output_dir: Directory for storing packages. Defaults to LOCAL_OUTPUT_DIR
                         env var or "./output".
             hosting_url: Base URL. Defaults to HOSTING_URL env var or
-                         "http://localhost:8000".
+                         "http://localhost:7860".
         """
         self.output_dir = Path(
             output_dir or os.getenv("LOCAL_OUTPUT_DIR", "./output")
         )
         self.hosting_url = (
-            hosting_url or os.getenv("HOSTING_URL", "http://localhost:8000")
+            hosting_url or os.getenv("HOSTING_URL", "http://localhost:7860")
         ).rstrip("/")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +83,7 @@ class LocalStorage(StorageProvider):
             >>> storage = LocalStorage()
             >>> url = storage.save_package("abc-123", {"passport.json": Path("tmp/p.json")})
             >>> # Files now at: output/abc-123/passport.json
-            >>> print(url)  # "http://localhost:8000/abc-123"
+            >>> print(url)  # "http://localhost:7860/abc-123"
         """
         package_dir = self.output_dir / passport_id
         package_dir.mkdir(parents=True, exist_ok=True)
@@ -108,22 +108,20 @@ class LocalStorage(StorageProvider):
 
         Args:
             passport_id: UUID of the passport.
-            filename: File name (e.g., "photo.png", "passport.json").
+            filename: File name (e.g., "product_image.<ext>", "passport.json").
 
         Returns:
             Full public URL string.
 
         Example:
-            >>> url = storage.get_public_url("abc-123", "photo.png")
-            >>> print(url)  # "http://localhost:8000/abc-123/photo"
+            >>> url = storage.get_public_url("abc-123", "product_image.<ext>")
+            >>> print(url)  # "http://localhost:7860/abc-123/photo"
         """
         # Map filenames to clean API routes
         route_map = {
             "passport.json": "",
-            "photo.png": "/photo",
+            "product_image.<ext>": "/photo",
             "passport.html": "/html",
-            "gap_report.html": "/gap-report",
-            "gap_report.pdf": "/gap-report",
             "qr.png": "/qr",
         }
         suffix = route_map.get(filename, f"/{filename}")

@@ -1,154 +1,254 @@
 # PassportAI
 
-> Generate ESPR-compliant Digital Product Passports from a product photo + description — 100% offline, powered by Gemma 4 12B.
+PassportAI is a Python prototype for generating reviewable Digital Product Passport (DPP) packages from a product photo, product description, and optional product evidence. The current vertical slice focuses on a fail-closed demo flow: generate a draft passport, show missing evidence, block unsupported publication claims, optionally host the public `passport.html` page on S3, and generate a QR code pointing to the passport page.
 
-<!-- TODO: Add demo GIF here (30-second screen recording of full flow) -->
-<!-- ![PassportAI Demo](docs/demo.gif) -->
+The project is built around local Gemma/Ollama inference for vision-supported extraction and deterministic Python gates for regulatory, legal, sustainability, identifier, and audit checks. It is not a compliance guessing tool: missing or weak evidence is represented as gaps rather than silently converted into compliance claims.
 
-## What is a Digital Product Passport?
+## What it generates
 
-The EU's [Ecodesign for Sustainable Products Regulation (ESPR)](https://ec.europa.eu/commission/presscorner/detail/en/ip_22_2013) requires most physical products sold in the EU to have a **Digital Product Passport (DPP)** — a machine-readable document containing:
+For each run, PassportAI can create a local package under `output/<passport_id>/` containing:
 
-- Material composition and origin
-- Carbon footprint and sustainability data
-- Repairability and durability information
-- End-of-life instructions
-- Certifications and compliance documents
+| Artifact | Purpose |
+| --- | --- |
+| `passport.json` | Machine-readable DPP JSON/JSON-LD-style artifact generated from reconciled domain data. |
+| `passport.html` | Human-readable public passport page. This is the only artifact intended for S3 public hosting in the current plan. |
+| `gap_report.html` | User-facing remediation report explaining blockers, missing evidence, owners, and next actions. |
+| `qr.png` | QR code targeting the human-readable passport URL. |
+| `product_image.<ext>` | Product image copied into the generated package. |
+| `passport_package.zip` | Local review/download bundle created by the Gradio UI flow. |
 
-**The problem:** Professional DPP consulting costs €15,000–€30,000 per product. With 6M+ SMEs in the EU needing compliance by 2027, that's a €90B+ barrier to market access.
+## Current capabilities
 
-**PassportAI:** Upload a product photo + description. Get a compliant DPP package in 6–9 minutes. Free. Offline. No data leaves your machine.
-
-## Quick Start
-
-```bash
-# 1. Install Ollama and pull the model
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma4:e4b
-
-# 2. Install Python dependencies
-pip install -r requirements.txt
-
-# 3. Start PassportAI
-python app.py
-# → UI: http://localhost:7860
-# → API: http://localhost:8000
-```
+- Product photo + text intake through a Gradio workspace.
+- Two runtime modes:
+  - `demo_mock`: deterministic fixture vision output for reliable UI/demo runs.
+  - `live_gemma`: Gemma-backed visual analysis through Ollama.
+- Supported product groups in the current implementation:
+  - `batteries`
+  - `electrical_appliances`
+  - `textiles`
+- Multi-agent pipeline with explicit ownership boundaries:
+  - `VisionAgent` for visible product evidence.
+  - `RegulatoryConsultant` for product group and sector profile anchoring.
+  - `LegalAgent` for document/legal evidence gaps.
+  - `LCASpecialist` for sustainability/LCA evidence gaps.
+  - `GS1Specialist` for identifier, resolver, and QR readiness checks.
+  - `DataAuditAgent` for deterministic readiness verdicts and publication gating.
+- DPP projection through `DPPGenerator`.
+- Human-readable rendering through `PassportRenderer` and `GapReportGenerator`.
+- Local storage and optional S3 storage.
+- S3 public hosting rule: only `passport.html` is uploaded publicly by the pipeline for S3-style storage; JSON, gap report, QR image, and ZIP remain local review artifacts.
 
 ## Architecture
 
-```
-Photo + Description
+```text
+Product photo + user input
         │
         ▼
-┌───────────────────────────────────────────────────────┐
-│                    PassportAI Pipeline                 │
-│                                                       │
-│  ┌──────────────┐    ┌──────────────────────────┐    │
-│  │ Vision Agent │    │      Photo Agent          │    │
-│  │ (Gemma 4)    │    │   (rembg → 800x800 PNG)  │    │
-│  └──────┬───────┘    └────────────┬─────────────┘    │
-│         └──────────┬──────────────┘                  │
-│                    ▼                                  │
-│         ┌─────────────────────┐                      │
-│         │   Merge & Enrich    │                      │
-│         └──────────┬──────────┘                      │
-│                    ▼                                  │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  Regulatory  │  Legal   │ LCA Specialist │   │    │
-│  │  Consultant  │  Agent   │    Agent       │   │    │
-│  └──────────────┴──────────┴────────────────┘   │    │
-│                    ▼                                  │
-│         ┌─────────────────────┐                      │
-│         │   DPP Generator     │ → passport.json      │
-│         │  (JSON-LD VCDM 2.0) │                      │
-│         └──────────┬──────────┘                      │
-│                    ▼                                  │
-│  ┌──────────────────────────────────────────────┐    │
-│  │  Data Audit Agent → readiness_score (0-100)  │    │
-│  └──────────────────────────────────────────────┘    │
-│                    ▼                                  │
-│         ┌─────────────────────┐                      │
-│         │   Gap Report PDF    │ → gap_report.pdf      │
-│         └──────────┬──────────┘                      │
-│                    ▼                                  │
-│         ┌─────────────────────┐                      │
-│         │  Storage Handler    │ → local or S3        │
-│         └──────────┬──────────┘                      │
-│                    ▼                                  │
-│         ┌─────────────────────┐                      │
-│         │   QR Generator      │ → qr.png (LAST)      │
-│         └─────────────────────┘                      │
-└───────────────────────────────────────────────────────┘
+VisionAgent / DemoVisionAgent
+        │
+        ▼
+RegulatoryConsultant ── LegalAgent ── LCASpecialist ── GS1Specialist
+        │                  │              │                │
+        └──────────────────┴──────────────┴────────────────┘
+                           │
+                           ▼
+              Reconciled domain data
+                           │
+                           ▼
+                  DataAuditAgent
+          readiness_score / readiness_verdict / is_publishable
+                           │
+                           ▼
+                    DPPGenerator
+                     passport.json
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+     PassportRenderer  GapReportGenerator  QRCodeGenerator
+      passport.html      gap_report.html       qr.png
+             │
+             ▼
+       LocalStorage or S3Storage
 ```
 
-## Output
+The key architectural constraint is separation of concerns. Agents produce bounded payloads; `PassportPipeline` reconciles those payloads; `DataAuditAgent` determines readiness; `DPPGenerator` projects the reconciled state into an artifact without inventing missing facts.
 
-For each product, PassportAI generates:
+## Technology stack
 
-| File | Description |
-|------|-------------|
-| `passport.json` | JSON-LD VCDM 2.0 Level 2 Digital Product Passport |
-| `photo.png` | Standardized 800×800 PNG with white background |
-| `passport.html` | Human-readable HTML passport page |
-| `gap_report.pdf` | Compliance gap analysis with action items |
-| `qr.png` | QR code linking to the passport URL |
+- Python 3.11+
+- Gradio for the web UI
+- Ollama Python SDK for local Gemma calls
+- Gemma model configured as `gemma4:e4b`
+- Jinja2 for HTML templates
+- qrcode + Pillow for QR generation
+- boto3 / botocore for S3 publishing
+- Pydantic, jsonschema, pyld for validation and structured data support
+- pytest for tests
+- Development tooling listed in `requirements.txt`: black, isort, mypy, ruff
 
-## Output Example
-
-<!-- TODO: Add screenshot of passport.json and QR code -->
-
-## Configuration
-
-Copy `.env.example` to `.env` and configure:
+## Installation
 
 ```bash
+# 1. Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate
+# Windows PowerShell:
+# .venv\Scripts\Activate.ps1
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Create local configuration
 cp .env.example .env
 ```
 
-Key settings:
-- `OLLAMA_MODEL` — model name (default: `gemma4:e4b`)
-- `STORAGE_MODE` — `local` or `s3`
-- `HOSTING_URL` — public URL for QR code generation
-
-## API
+For live Gemma mode, install Ollama separately and pull the configured model:
 
 ```bash
-# Generate a DPP
-POST http://localhost:8000/generate
-Content-Type: multipart/form-data
-  photo: <file>
-  description: "Cotton tote bag, made in Ukraine"
-  gtin: "05901234123457"  # optional
-
-# Retrieve a passport
-GET http://localhost:8000/{uuid}           # passport.json
-GET http://localhost:8000/{uuid}/photo     # photo.png
-GET http://localhost:8000/{uuid}/html      # passport.html
+ollama pull gemma4:e4b
 ```
 
-## Supported Product Categories (ESPR)
+Make sure Ollama is running before using `live_gemma` mode or `scripts/run_demo_passport.py`.
 
-- Textiles (🧵 implemented)
-- Electronics (🔌 in progress)
-- Batteries (🔋 planned)
-- Furniture (🪑 planned)
-- Footwear (👟 planned)
-- Chemicals (⚗️ planned)
+## Running the Gradio UI
 
-## Requirements
+The current working UI entry point is:
 
-- Python 3.11+
-- [Ollama](https://ollama.com) with `gemma4:e4b` pulled
-- 8GB+ RAM (16GB recommended for Gemma 4 12B)
-- GPU recommended but not required (CPU inference: ~3-5 min/passport)
+```bash
+python scripts/run_gradio_app.py --host 127.0.0.1 --port 7860
+```
+
+Then open:
+
+```text
+http://127.0.0.1:7860
+```
+
+Recommended demo settings:
+
+```text
+Runtime Mode: demo_mock
+Storage Mode: local
+Product Group: batteries
+Image: demo_images/product_small.jpg
+```
+
+Use `live_gemma` only when Ollama and the model are available locally.
+
+## Running the CLI demo
+
+The CLI demo is intended for Gemma-backed vision and requires Ollama:
+
+```bash
+python scripts/run_demo_passport.py \
+  --image demo_images/product_small.jpg \
+  --description "Photo-only battery product for DPP readiness demo" \
+  --product-group batteries \
+  --brand-name "Demo Brand" \
+  --storage local \
+  --timeout 600
+```
+
+For S3 mode, configure `.env` first and run with `--storage s3`.
+
+## S3 publishing
+
+Set the following values in `.env` for S3 mode:
+
+```env
+STORAGE_MODE=s3
+AWS_REGION=eu-west-1
+AWS_S3_BUCKET=your-bucket-name
+AWS_S3_PREFIX=passports
+PUBLIC_BASE_URL=
+```
+
+Credentials can come from AWS CLI/default credentials, IAM role, or environment variables. Do not commit `.env`.
+
+Current publishing semantics:
+
+```text
+Readiness: audit verdict such as not_ready, ready_with_gaps, ready, or blocked_by_conflicts
+Storage: local / s3
+Package URL: public passport page URL when S3 is used
+QR URL or local QR path: generated data-carrier artifact
+```
+
+S3 hosting does not prove compliance readiness. It only makes the public passport page reachable. The audit verdict controls whether publication should be considered supported.
+
+## Project structure
+
+```text
+passportai_repo/
+├── agents/                 # Agent contracts and agent implementations
+├── contexts/               # JSON-LD context files
+├── data/                   # Local coefficient/reference data
+├── demo_images/            # Demo product image
+├── output/                 # Generated local artifacts; should be cleaned before final submission unless examples are documented
+├── prompts/                # Prompt files for agent tasks
+├── schemas/                # DPP schema files
+├── scripts/                # Gradio and CLI demo entry points
+├── src/
+│   ├── core/               # Pipeline, DPP generator, renderers, QR generator, Gemma client
+│   ├── processing/         # Legacy/placeholder photo and QR processing modules
+│   ├── storage/            # Local and S3 storage providers
+│   ├── ui/                 # Gradio UI
+│   └── utils/              # JSON-LD loading utilities
+├── templates/              # Jinja2 HTML templates
+├── tests/                  # pytest suite
+├── FINAL_POLISH_PLAN.md    # Remaining polish plan
+├── README.md               # Project documentation
+└── requirements.txt        # Python dependencies
+```
+
+## Development status
+
+According to `FINAL_POLISH_PLAN.md`, the core vertical slice is already working:
+
+- agent pipeline
+- `passport.json`
+- `passport.html`
+- `gap_report.html`
+- S3 hosting for the public passport page
+- QR code
+- Gradio UI v1
+
+Observed status in this archive:
+
+- The final-plan test subset passes:
+  - `pytest tests/test_gradio_app.py -q`
+  - `pytest tests/test_pipeline.py -q`
+  - `pytest tests/test_qr_generator.py -q`
+  - `pytest tests/test_s3_storage.py -q`
+  - `pytest tests/test_dpp_generator.py -q`
+  - `pytest tests/test_passport_renderer.py -q`
+  - `pytest tests/test_gap_report.py -q`
+- The Gradio UI implements the readiness/storage separation required by the polish plan.
+- `PassportPipeline` sends only `passport.html` to upload-only storage providers such as S3.
+- The generated local review package still includes JSON, gap report, QR, image, and ZIP artifacts.
+- `scripts/run_gradio_app.py` is the practical UI entry point.
+- The repository contains generated `output/` examples and a `.env` file in the archive. These should be removed or sanitized before public submission.
+
+## Remaining polish work
+
+From `FINAL_POLISH_PLAN.md`, the main remaining work is submission hardening, not new architecture:
+
+- Finish visual polish for the Gradio workspace if final screenshots still look too prototype-like.
+- Keep polishing `passport.html` and `gap_report.html` for a credible demo video.
+- Clean generated outputs, caches, empty files, and obsolete skeleton/docs that conflict with the current plan.
+- Lock the battery hero scenario and add `docs/HERO_SCENARIO.md` plus screenshots under `demo_assets/screenshots/`.
+- Record the final 3-minute demo video.
+- Run the final test subset again after cleanup.
+
+## Known limitations
+
+- PassportAI does not certify legal compliance. It produces a draft passport and a deterministic evidence gap report.
+- Missing evidence should block unsupported publication claims.
+- The old root `README.md`, `aws_s3_setup.md`, `IMPLEMENTATION_ORDER.md`, and some comments still contain outdated wording from earlier architecture stages.
+- Some schema files exist for product categories beyond the currently supported runtime product groups; do not present those categories as implemented until pipeline support is added.
+- Full test-suite execution needs cleanup: `tests/test_agents.py` globally mocks `sys.modules["src"]`, which can break later test collection if tests are run together without isolation.
 
 ## License
 
-[Creative Commons Attribution 4.0 International (CC-BY 4.0)](LICENSE)
-
-You are free to use, modify, and distribute this work for any purpose, including commercially, as long as you give appropriate credit.
-
----
-
-Built for the [Kaggle Gemma Sprint 2025](https://www.kaggle.com/competitions/gemma-sprint-2025) competition.
+The archive includes a `LICENSE` file and the previous README states Creative Commons Attribution 4.0 International (CC-BY 4.0). Verify final licensing text before public release.

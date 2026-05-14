@@ -736,10 +736,13 @@ def test_pipeline_uses_staging_output_dir_for_upload_only_storage(tmp_path):
     assert result.artifact_paths["gap_report.html"] == expected_package_dir / "gap_report.html"
     assert result.artifact_paths["product_image.jpg"] == expected_package_dir / "product_image.jpg"
 
-    assert storage.saved_files[result.passport_id] == result.artifact_paths
+    assert storage.saved_files[result.passport_id] == {
+        "passport.html": result.artifact_paths["passport.html"],
+    }
     assert dpp_generator.last_kwargs["public_package_url"] == (
         f"https://cdn.example.test/passports/{result.passport_id}/passport.html"
     )
+    assert dpp_generator.last_kwargs["qr_url"] is None
 
 def test_pipeline_generates_qr_after_passport_html_and_before_publish(tmp_path):
     image_path = tmp_path / "product.jpg"
@@ -776,9 +779,7 @@ def test_pipeline_generates_qr_after_passport_html_and_before_publish(tmp_path):
     )
 
     assert result.success is True
-    assert result.qr_url == (
-        f"https://cdn.example.test/passports/{result.passport_id}/qr.png"
-    )
+    assert result.qr_url is None
 
     expected_package_dir = staging_dir / result.passport_id
     assert result.artifact_paths["qr.png"] == expected_package_dir / "qr.png"
@@ -791,11 +792,11 @@ def test_pipeline_generates_qr_after_passport_html_and_before_publish(tmp_path):
         "print_ready": True,
     }
 
-    assert storage.saved_files[result.passport_id] == result.artifact_paths
-    assert "qr.png" in storage.saved_files[result.passport_id]
-    assert dpp_generator.last_kwargs["qr_url"] == (
-        f"https://cdn.example.test/passports/{result.passport_id}/qr.png"
-    )
+    assert storage.saved_files[result.passport_id] == {
+        "passport.html": result.artifact_paths["passport.html"],
+    }
+    assert "qr.png" not in storage.saved_files[result.passport_id]
+    assert dpp_generator.last_kwargs["qr_url"] is None
 
 
 def test_pipeline_fails_closed_when_dpp_validation_fails(tmp_path):

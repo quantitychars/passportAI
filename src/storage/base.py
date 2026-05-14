@@ -27,7 +27,7 @@ class StorageProvider(ABC):
     The passport_url returned by save_package() is used to:
       1. Build the QR code (step 13 — ALWAYS LAST)
       2. Populate the JSON-LD passport's photo.url field
-      3. Serve via FastAPI endpoints
+      3. Provide URLs used by the rendered passport and QR code
 
     Notes:
         - Never hardcode S3 bucket names or local paths. Use env vars.
@@ -50,20 +50,20 @@ class StorageProvider(ABC):
             passport_id: UUID of the passport (used as directory/prefix).
             files: Dictionary mapping filenames to local file paths.
                    Expected keys: "passport.json", "photo.png", "passport.html",
-                                  "gap_report.pdf"
+                                  "gap_report.html"
                    QR code (qr.png) is added AFTER this call returns.
 
         Returns:
-            Public URL for accessing the passport (e.g., "http://localhost:8000/{uuid}"
+            Public URL for accessing the passport HTML page or local package base URL (e.g., "http://localhost:7860/{uuid}"
             or "https://bucket.s3.amazonaws.com/{uuid}/passport.json").
 
         Raises:
             StorageError: If any file fails to save.
 
         Example:
-            >>> provider = LocalStorage(output_dir="./output", hosting_url="http://localhost:8000")
+            >>> provider = LocalStorage(output_dir="./output", hosting_url="http://localhost:7860")
             >>> url = provider.save_package("abc-123", {"passport.json": Path("tmp/passport.json")})
-            >>> print(url)  # "http://localhost:8000/abc-123"
+            >>> print(url)  # "http://localhost:7860/abc-123"
         """
         ...
 
@@ -80,7 +80,7 @@ class StorageProvider(ABC):
 
         Example:
             >>> url = provider.get_public_url("abc-123", "photo.png")
-            >>> print(url)  # "http://localhost:8000/abc-123/photo"
+            >>> print(url)  # "http://localhost:7860/abc-123/photo"
         """
         ...
 

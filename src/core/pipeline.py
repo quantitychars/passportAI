@@ -295,7 +295,7 @@ class PassportPipeline:
             state.passport_id,
             "passport.html",
         )
-        state.qr_url = self.storage.get_public_url(
+        qr_artifact_url = None if self._is_upload_only_storage() else self.storage.get_public_url(
             state.passport_id,
             "qr.png",
         )
@@ -305,7 +305,7 @@ class PassportPipeline:
             audit_payload=audit_payload,
             passport_id=state.passport_id,
             public_package_url=passport_public_url,
-            qr_url=state.qr_url,
+            qr_url=qr_artifact_url,
         )
 
         is_valid, validation_errors = dpp_generator.validate(passport_json)
@@ -450,19 +450,48 @@ class PassportPipeline:
         )
 
         state.qr_path = qr_path
-        state.qr_url = self.storage.get_public_url(state.passport_id, "qr.png")
+        if not self._is_upload_only_storage():
+            state.qr_url = self.storage.get_public_url(state.passport_id, "qr.png")
         state.artifact_paths["qr.png"] = qr_path
 
 
     def _publish_artifact_package(self, state: PipelineState) -> None:
-        """Save the package once all configured artifact renderers have succeeded."""
-        if not state.artifact_paths:
+        """Save public storage artifacts once renderers have succeeded.
+
+        Local mode keeps the full working package together because the developer
+        uses the output directory as a review bundle. Remote/S3-style storage is
+        different: only the public passport document should be hosted.
+        Remediation reports, JSON payloads, and ZIP bundles remain local review
+        artifacts unless a future product requirement explicitly changes this.
+        """
+        files_to_store = self._artifact_paths_for_storage(state)
+        if not files_to_store:
             return
 
         state.package_url = self.storage.save_package(
             state.passport_id,
-            dict(state.artifact_paths),
+            files_to_store,
         )
+
+    def _artifact_paths_for_storage(self, state: PipelineState) -> dict[str, Path]:
+        """Return the artifact subset that should be sent to the active storage.
+
+        LocalStorage stores the complete review package for the user. Upload-only
+        providers such as S3Storage publish only passport.html, because gap
+        reports and JSON are review/internal artifacts, not public passport pages.
+        """
+        if not state.artifact_paths:
+            return {}
+
+        if self._is_upload_only_storage():
+            passport_html = state.artifact_paths.get("passport.html")
+            return {"passport.html": passport_html} if passport_html is not None else {}
+
+        return dict(state.artifact_paths)
+
+    def _is_upload_only_storage(self) -> bool:
+        """Return True for storage providers that do not expose a local package dir."""
+        return not hasattr(self.storage, "get_package_dir")
 
     def _build_reconciled_domain_data(self, state: PipelineState) -> dict[str, Any]:
         """Build one final domain snapshot from boundary-clean agent outputs.

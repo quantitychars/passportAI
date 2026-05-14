@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from src.ui.gradio_app import build_interface
+from src.ui.gradio_app import build_interface, _ui_css
 
 
 def main() -> int:
@@ -40,7 +40,7 @@ def main() -> int:
     args = parser.parse_args()
 
     interface = build_interface()
-    interface.launch(server_name=args.host, server_port=args.port, share=args.share)
+    interface.launch(server_name=args.host, server_port=args.port, share=args.share, css=_ui_css())
     return 0
 
 
