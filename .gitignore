@@ -96,3 +96,6 @@ temp/
 *.bin
 .vs/
 
+
+# ---- Claude Code ----
+.claude/

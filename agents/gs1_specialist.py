@@ -31,7 +31,7 @@ class IdentifierCheck:
             "field": self.field,
             "severity": self.severity,
             "blocking": self.blocking,
-            "reason_code": "missing_or_invalid_identifier",
+            "reason_code": "missing",
             "reason": self.reason,
             "why_it_matters": (
                 "A Digital Product Passport needs stable identifiers and a resolvable "
@@ -39,6 +39,7 @@ class IdentifierCheck:
                 "linked reliably."
             ),
             "current_evidence_status": "absent",
+            "evidence_source": "missing",
             "acceptable_evidence": [
                 "product master data",
                 "GS1 registry export",

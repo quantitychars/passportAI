@@ -19,20 +19,19 @@ class StorageProvider(ABC):
     """Abstract base class for DPP package storage backends.
 
     All storage implementations must provide:
-      - save_package: Save all DPP files and return the public URL
-      - get_public_url: Build public URL for a given file
-      - file_exists: Check if a file exists in storage
-      - delete_package: Remove all files for a passport ID
+      - save_package: Save the selected DPP artifacts and return the passport URL
+      - get_public_url: Build a public URL for a given file
+      - file_exists: Check whether a file exists in storage
+      - delete_package: Remove files for a passport ID
 
-    The passport_url returned by save_package() is used to:
-      1. Build the QR code (step 13 — ALWAYS LAST)
-      2. Populate the JSON-LD passport's photo.url field
-      3. Provide URLs used by the rendered passport and QR code
+    The pipeline owns artifact selection:
+      - LocalStorage receives the full local review/download package.
+      - S3Storage receives only passport.html; the ZIP and full package remain local.
 
     Notes:
         - Never hardcode S3 bucket names or local paths. Use env vars.
         - All Path parameters use pathlib.Path, never str paths.
-        - All implementations must be thread-safe for concurrent generation.
+        - QR codes point to passport.html, not to a legal certification endpoint.
     """
 
     @abstractmethod
@@ -41,29 +40,25 @@ class StorageProvider(ABC):
         passport_id: str,
         files: dict[str, Path],
     ) -> str:
-        """Save all DPP package files and return the passport's public URL.
+        """Save selected DPP artifacts and return the passport URL.
 
-        This method is called BEFORE generate_qr() — the returned URL
-        is used to encode the QR code.
+        PassportPipeline calls this after local artifacts are generated. The
+        ``files`` mapping is intentionally backend-dependent: local mode stores
+        the full package, while S3 mode stores only ``passport.html``.
 
         Args:
-            passport_id: UUID of the passport (used as directory/prefix).
-            files: Dictionary mapping filenames to local file paths.
-                   Expected keys: "passport.json", "photo.png", "passport.html",
-                                  "gap_report.html"
-                   QR code (qr.png) is added AFTER this call returns.
+            passport_id: UUID of the passport, used as directory or object prefix.
+            files: Mapping of target filenames to local file paths. Current
+                artifacts may include ``passport.json``, ``passport.html``,
+                ``gap_report.html``, ``qr.png``, ``product_image.<ext>``, and
+                ``passport_package.zip``. Upload-only backends may receive a
+                deliberate subset.
 
         Returns:
-            Public URL for accessing the passport HTML page or local package base URL (e.g., "http://localhost:7860/{uuid}"
-            or "https://bucket.s3.amazonaws.com/{uuid}/passport.json").
+            Public URL for the passport HTML page or local package base URL.
 
         Raises:
-            StorageError: If any file fails to save.
-
-        Example:
-            >>> provider = LocalStorage(output_dir="./output", hosting_url="http://localhost:7860")
-            >>> url = provider.save_package("abc-123", {"passport.json": Path("tmp/passport.json")})
-            >>> print(url)  # "http://localhost:7860/abc-123"
+            StorageError: If any selected file fails to save.
         """
         ...
 
@@ -73,14 +68,14 @@ class StorageProvider(ABC):
 
         Args:
             passport_id: UUID of the passport.
-            filename: Name of the file (e.g., "photo.png", "passport.json").
+            filename: Name of the file (e.g., "product_image.png", "passport.html").
 
         Returns:
             Full public URL string.
 
         Example:
-            >>> url = provider.get_public_url("abc-123", "photo.png")
-            >>> print(url)  # "http://localhost:7860/abc-123/photo"
+            >>> url = provider.get_public_url("abc-123", "passport.html")
+            >>> print(url)  # "http://localhost:7860/abc-123/passport.html"
         """
         ...
 
@@ -110,7 +105,7 @@ class StorageProvider(ABC):
         ...
 
     def save_qr(self, passport_id: str, qr_path: Path) -> str:
-        """Save the QR code file. Called LAST in the pipeline.
+        """Save a QR code file through the storage backend.
 
         Convenience method that calls save_package() with just the QR file.
 

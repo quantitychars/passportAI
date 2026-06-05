@@ -23,8 +23,16 @@ Return exactly one JSON object with this shape:
   "certifications_visible": ["certification or conformity marks visibly present on product, label, or packaging"],
   "special_markings": ["readable visible text, symbols, model-like markings, voltage, capacity, care symbols, warning labels"],
   "product_type": "short visible product type description",
+  "evidence_source": "observed_from_image",
   "confidence": 0.0
 }
+
+Evidence source vocabulary:
+- observed_from_image: directly visible in a photo or label image.
+- provided_by_user: explicitly supplied by the user as text or reference. Do not use this for image-only observations.
+- derived_from_evidence: mechanically derived from supplied evidence without adding facts.
+- inferred_low_confidence: weak inference that needs human or supplier confirmation.
+- missing: no evidence supplied.
 
 Allowed category values:
 - batteries
@@ -38,15 +46,22 @@ Category guidance:
 - Use "textiles" for garments, textile accessories, fabrics, footwear-like textile products, bags, or textile-based goods.
 - Use "unknown" if the image is unclear or does not fit the supported categories.
 
+Category-specific evidence behavior:
+- batteries: report only readable battery markings such as voltage, capacity, chemistry, CE mark, crossed-out wheeled-bin symbol, safety warnings, model-like text, or serial-like text. Do not invent battery category, chemistry, passport obligation, manufacturer, capacity, voltage, or serial number.
+- electrical_appliances: report only visible appliance type hints, energy label text if readable, power markings, model-like text, manuals/support URLs if readable, or visible warnings. Do not infer energy class, RoHS evidence, or CE validity from appearance alone.
+- textiles: report only visible fiber/care label text, care symbols, material appearance, brand/model-like text, origin text, or visible certificate claims. Do not infer exact fiber percentages or certificate validity unless the label text is readable.
+
 Battery example:
 If the image shows an industrial battery pack with visible voltage, capacity, CE mark, warning label, or chemistry marking, output category "batteries" and place those markings in "special_markings". Do not invent battery category, chemistry, model, serial number, manufacturer, or country unless the text is visibly readable.
 
 Hard safety rules:
 - Return JSON only. No markdown fences. No commentary.
 - Use only supported category values.
+- Use evidence_source "observed_from_image" for visible facts and "missing" only when no evidence is visible.
 - Use empty arrays when no evidence is visible.
 - Use null only inside dimensions_estimate when dimensions are not estimable.
 - Do not invent supplier, brand, model, serial, batch, country, legal, compliance, certificate, carbon, recycled-content, or LCA facts.
 - A visible certification logo is only a visible claim, not verified certification validity.
 - A visible material/chemistry hint is image evidence only and still requires supplier confirmation.
+- Unsupported compliance claims must not be converted into verified facts.
 - If the image is ambiguous, use category "unknown" with low confidence.

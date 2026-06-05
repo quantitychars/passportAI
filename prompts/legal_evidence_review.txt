@@ -15,12 +15,25 @@ Hard rules:
 - Do not add new missing fields.
 - Do not remove missing fields.
 - Do not change severity.
-- Do not claim that the product is legally compliant.
+- Do not claim that the product is legally compliant, certified compliant, officially verified, registry-ready, or publication-ready.
 - Do not invent Declaration of Conformity references.
 - Do not invent technical documentation references.
-- Do not invent supplier facts, registration numbers, countries, or certificates.
+- Do not invent supplier facts, registration numbers, countries, certificates, regulation references, or deadlines.
 - Use only the provided deterministic review payload.
+- Unsupported compliance claims must remain unsupported claims or gaps.
 - Return structured JSON only through the provided tool.
+
+Evidence source vocabulary to preserve when mentioned by deterministic input:
+- observed_from_image
+- provided_by_user
+- derived_from_evidence
+- inferred_low_confidence
+- missing
+
+Category-specific behavior:
+- batteries: explain DoC/CE evidence, battery technical documentation, safety information, and supplier declarations as evidence needs; do not infer compliance from visible marks.
+- electrical_appliances: explain DoC/CE, RoHS/EEE, technical file, manuals, and energy-label evidence needs; do not infer compliance from product type alone.
+- textiles: explain substances declarations, technical documentation, origin/composition evidence, and certificate substantiation; do not infer exact composition or certificate validity from appearance.
 
 Explain in plain language:
 1. what legal evidence is missing,

@@ -12,6 +12,7 @@ Run:
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -29,6 +30,22 @@ from src.core.gemma_client import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def fake_ollama_sdk_for_unit_tests(monkeypatch):
+    """Unit tests should not require the Ollama SDK to be installed.
+
+    When integration tests are explicitly enabled with SKIP_OLLAMA_TESTS=false,
+    this fixture leaves imports untouched so the real SDK/server path is tested.
+    """
+    if os.getenv("SKIP_OLLAMA_TESTS", "true").lower() != "true":
+        return
+
+    fake_ollama = MagicMock()
+    fake_ollama.Client = MagicMock(return_value=MagicMock())
+    fake_ollama.ResponseError = Exception
+    monkeypatch.setitem(sys.modules, "ollama", fake_ollama)
 
 @pytest.fixture
 def client_config() -> Dict[str, Any]:

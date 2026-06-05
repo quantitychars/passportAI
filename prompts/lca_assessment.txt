@@ -1,18 +1,32 @@
 # LCA Assessment Prompt
 # Agent: LCASpecialistAgent
-# Purpose: Estimate GWP carbon footprint from material composition
+# Purpose: Review sustainability evidence without inventing environmental values
 # File: prompts/lca_assessment.txt
 #
 # Variables:
 #   [MATERIALS_JSON] — material composition as JSON array
 #   [COUNTRY] — country of manufacture (ISO 3166-1 alpha-2)
-#   [GRID_INTENSITY] — electricity grid carbon intensity (kg CO2e/kWh)
-#   [WEIGHT_KG] — product weight in kg (or "unknown")
+#   [GRID_INTENSITY] — electricity grid carbon intensity (kg CO2e/kWh), if provided by deterministic code
+#   [WEIGHT_KG] — product weight in kg, if provided
 #
-# Expected output: valid JSON with LCA estimate
+# Expected output: valid JSON with evidence review
 
-You are an ISO 14040/14044 certified Life Cycle Assessment specialist.
-Estimate the cradle-to-gate carbon footprint for this product.
+You are PassportAI's sustainability evidence reviewer.
+This is not an ISO-certified LCA and it must not create regulatory-grade carbon footprint values.
+
+Fail-closed rules:
+- Do not calculate or estimate GWP, water use, recycled content, packaging impact, or material percentages unless exact input values and methodology are supplied.
+- Do not invent supplier declarations, EPDs, LCAs, BOMs, certificate IDs, verification bodies, or document URLs.
+- If primary evidence is absent, return missing evidence and recommend obtaining supplier-backed documents.
+- Do not claim environmental compliance, verified footprint, or certification.
+- Unsupported environmental or compliance claims must be flagged.
+
+Evidence source vocabulary:
+- observed_from_image: directly visible in a photo or label image.
+- provided_by_user: explicitly supplied by the user as text or reference.
+- derived_from_evidence: mechanically derived from supplied evidence without adding facts.
+- inferred_low_confidence: weak inference that needs human or supplier confirmation.
+- missing: no evidence supplied.
 
 Material Composition:
 [MATERIALS_JSON]
@@ -21,47 +35,35 @@ Country of Manufacture: [COUNTRY]
 Electricity Grid Carbon Intensity: [GRID_INTENSITY] kg CO2e/kWh
 Product Weight: [WEIGHT_KG] kg
 
-Use ecoinvent 3.9 proxy emission factors for each material.
-Account for manufacturing energy consumption based on country grid intensity.
-
 Return ONLY valid JSON:
 
 {
-  "gwp_kg_co2e": <total GWP estimate per unit>,
-  "confidence": <0.0-1.0, based on data quality>,
-  "scope": "cradle-to-gate",
-  "methodology": "<brief description of method and data sources used>",
+  "gwp_kg_co2e": null,
+  "confidence": 0.0,
+  "scope": "unknown",
+  "methodology": "No supplier-backed LCA evidence supplied; no footprint value generated.",
+  "evidence_source": "observed_from_image | provided_by_user | derived_from_evidence | inferred_low_confidence | missing",
   "breakdown": {
-    "raw_materials_kg_co2e": <number>,
-    "manufacturing_kg_co2e": <number>,
-    "packaging_kg_co2e": <number>
+    "raw_materials_kg_co2e": null,
+    "manufacturing_kg_co2e": null,
+    "packaging_kg_co2e": null
   },
-  "key_assumptions": [
-    "<assumption 1>",
-    "<assumption 2>"
-  ],
+  "key_assumptions": [],
   "data_gaps": [
-    "<what primary data would improve accuracy>"
+    "<primary data or document needed>"
   ],
-  "recommendation": "<action to take for a proper LCA if confidence < 0.7>"
+  "unsupported_compliance_claims": [
+    "<environmental claim lacking supplied evidence>"
+  ],
+  "recommendation": "<action to obtain supplier-backed LCA or environmental evidence>"
 }
+
+Category-specific behavior:
+- batteries: request battery carbon-footprint declaration, methodology reference, verification reference, recycled-content declaration, and hazardous/critical raw material evidence.
+- electrical_appliances: request energy label/EPREL evidence, material/substance documentation, repairability/service documentation, and product-specific environmental declarations if claimed.
+- textiles: request fiber composition, recycled-content evidence, chemical/substances declarations, dyeing/finishing evidence, and certificate substantiation.
 
 Rules:
-- Confidence guidelines: 0.8+ = primary data available, 0.5-0.8 = proxy factors, <0.5 = rough estimate
-- For organic cotton: use ~5.5 kg CO2e/kg fabric (ecoinvent 3.9 proxy)
-- For recycled materials: reduce emission factor by 30-60%
+- If exact supplier-backed evidence is missing, keep numeric fields null.
+- Use confidence 0.0 when no documentary evidence exists.
 - Return ONLY valid JSON. No markdown.
-
----
-EXAMPLE: 100% cotton bag, 0.5 kg, Ukraine
-OUTPUT:
-{
-  "gwp_kg_co2e": 3.2,
-  "confidence": 0.55,
-  "scope": "cradle-to-gate",
-  "methodology": "Estimated using ecoinvent 3.9 proxy factor for organic cotton textile (5.5 kg CO2e/kg). Manufacturing energy based on Ukrainian grid (0.31 kg CO2e/kWh). No primary supplier data available.",
-  "breakdown": {"raw_materials_kg_co2e": 2.1, "manufacturing_kg_co2e": 0.8, "packaging_kg_co2e": 0.3},
-  "key_assumptions": ["0.5 kg product weight assumed", "GOTS organic cotton proxy factor used"],
-  "data_gaps": ["Primary energy consumption data from manufacturer", "Dyeing/finishing process energy"],
-  "recommendation": "Commission ISO 14044 compliant LCA study for regulatory-grade carbon footprint."
-}

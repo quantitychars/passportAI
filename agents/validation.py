@@ -8,6 +8,7 @@ from .contracts import (
     AGENT_NAME_VALUES,
     AgentPayload,
     CONFIDENCE_SOURCE_VALUES,
+    EVIDENCE_SOURCE_VALUES,
     EVIDENCE_STATUS_VALUES,
     EXPECTED_ESPR_CATEGORY_BY_GROUP,
     EXPECTED_SECTOR_PROFILE_BY_GROUP,
@@ -27,6 +28,7 @@ VALID_CONFIDENCE_SOURCES = set(CONFIDENCE_SOURCE_VALUES)
 
 VALID_READINESS_VERDICTS = set(READINESS_VERDICT_VALUES)
 VALID_EVIDENCE_STATUSES = set(EVIDENCE_STATUS_VALUES)
+VALID_EVIDENCE_SOURCES = set(EVIDENCE_SOURCE_VALUES)
 VALID_ACCEPTABLE_EVIDENCE = set(ACCEPTABLE_EVIDENCE_VALUES)
 VALID_REASON_CODES = set(REASON_CODE_VALUES)
 VALID_ACTION_OWNERS = set(ACTION_OWNER_VALUES)
@@ -372,6 +374,7 @@ def _validate_data_audit_missing_fields(missing_fields: list[Any]) -> list[str]:
         blocking = item.get("blocking")
         source_agents = item.get("source_agents")
         current_evidence_status = item.get("current_evidence_status")
+        evidence_source = item.get("evidence_source")
         closure_condition = item.get("closure_condition")
         acceptable_evidence = item.get("acceptable_evidence")
         why_it_matters = item.get("why_it_matters")
@@ -406,6 +409,9 @@ def _validate_data_audit_missing_fields(missing_fields: list[Any]) -> list[str]:
             errors.append(
                 f"{prefix}.current_evidence_status must be a valid EvidenceStatus"
             )
+
+        if evidence_source is not None and evidence_source not in VALID_EVIDENCE_SOURCES:
+            errors.append(f"{prefix}.evidence_source must be a valid EvidenceSource")
 
         if not _is_non_empty_string(closure_condition):
             errors.append(

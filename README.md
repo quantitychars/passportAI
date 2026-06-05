@@ -83,7 +83,7 @@ The key architectural constraint is separation of concerns. Agents produce bound
 - Jinja2 for HTML templates
 - qrcode + Pillow for QR generation
 - boto3 / botocore for S3 publishing
-- Pydantic, jsonschema, pyld for validation and structured data support
+- jsonschema for schema validation and structured data checks
 - pytest for tests
 - Development tooling listed in `requirements.txt`: black, isort, mypy, ruff
 
@@ -191,7 +191,6 @@ passportai_repo/
 ├── scripts/                # Gradio and CLI demo entry points
 ├── src/
 │   ├── core/               # Pipeline, DPP generator, renderers, QR generator, Gemma client
-│   ├── processing/         # Legacy/placeholder photo and QR processing modules
 │   ├── storage/            # Local and S3 storage providers
 │   ├── ui/                 # Gradio UI
 │   └── utils/              # JSON-LD loading utilities
@@ -245,9 +244,9 @@ From `FINAL_POLISH_PLAN.md`, the main remaining work is submission hardening, no
 
 - PassportAI does not certify legal compliance. It produces a draft passport and a deterministic evidence gap report.
 - Missing evidence should block unsupported publication claims.
-- The old root `README.md`, `aws_s3_setup.md`, `IMPLEMENTATION_ORDER.md`, and some comments still contain outdated wording from earlier architecture stages.
+- Historical planning notes are kept for development context. Treat `FINAL_DEV_CONTEXT.md` and `FINAL_POLISH_PLAN.md` as the source of truth for the final architecture.
 - Some schema files exist for product categories beyond the currently supported runtime product groups; do not present those categories as implemented until pipeline support is added.
-- Full test-suite execution needs cleanup: `tests/test_agents.py` globally mocks `sys.modules["src"]`, which can break later test collection if tests are run together without isolation.
+- Full test-suite execution is supported in this archive; Ollama integration tests remain skipped by default unless `SKIP_OLLAMA_TESTS=false` is set.
 
 ## License
 

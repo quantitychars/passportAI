@@ -35,6 +35,14 @@ _EVIDENCE_STATUS_RANK = {
     "document_present_unverified": 4,
     "verified_documented": 5,
 }
+
+_EVIDENCE_SOURCE_RANK = {
+    "missing": 0,
+    "inferred_low_confidence": 1,
+    "observed_from_image": 2,
+    "provided_by_user": 3,
+    "derived_from_evidence": 4,
+}
 class DataAuditAgent(BaseAgent):
     """
     Cross-agent evidence auditor and passport readiness synthesizer.
@@ -333,6 +341,13 @@ class DataAuditAgent(BaseAgent):
             reason_code=reason_code,
             reason=reason,
         )
+        evidence_source = self._normalize_evidence_source(
+            item=item,
+            source_domain=source_domain,
+            reason_code=reason_code,
+            current_evidence_status=current_evidence_status,
+            can_be_inferred=can_be_inferred,
+        )
         acceptable_evidence = self._derive_acceptable_evidence(source_domain)
         why_it_matters = self._derive_why_it_matters(
             field=field,
@@ -369,6 +384,7 @@ class DataAuditAgent(BaseAgent):
             "reason_code": reason_code,
             "source_agents": [agent_name],
             "current_evidence_status": current_evidence_status,
+            "evidence_source": evidence_source,
             "closure_condition": closure_condition,
             "acceptable_evidence": acceptable_evidence,
             "why_it_matters": why_it_matters,
@@ -428,6 +444,10 @@ class DataAuditAgent(BaseAgent):
         primary["current_evidence_status"] = self._merge_evidence_status(
             left.get("current_evidence_status"),
             right.get("current_evidence_status"),
+        )
+        primary["evidence_source"] = self._merge_evidence_source(
+            left.get("evidence_source"),
+            right.get("evidence_source"),
         )
 
         if not primary.get("regulatory_basis"):
@@ -950,6 +970,45 @@ class DataAuditAgent(BaseAgent):
         if "claim" in reason.lower():
             return "claim_only"
         return "absent"
+
+    def _normalize_evidence_source(
+        self,
+        *,
+        item: dict[str, Any],
+        source_domain: str,
+        reason_code: str,
+        current_evidence_status: str,
+        can_be_inferred: bool,
+    ) -> str:
+        explicit = self._clean_string(item.get("evidence_source"))
+        if explicit in _EVIDENCE_SOURCE_RANK:
+            return explicit
+
+        if current_evidence_status == "absent" or reason_code in {
+            "missing",
+            "document_absent",
+            "missing_or_invalid_identifier",
+            "not_accessible",
+        }:
+            return "missing"
+
+        if source_domain == "vision":
+            return "observed_from_image"
+
+        if can_be_inferred:
+            return "inferred_low_confidence"
+
+        if source_domain in {"regulatory", "legal", "lca", "gs1", "audit", "system"}:
+            return "derived_from_evidence"
+
+        return "missing"
+
+    def _merge_evidence_source(self, left: Any, right: Any) -> str:
+        left_value = left if left in _EVIDENCE_SOURCE_RANK else "missing"
+        right_value = right if right in _EVIDENCE_SOURCE_RANK else "missing"
+        if _EVIDENCE_SOURCE_RANK[left_value] >= _EVIDENCE_SOURCE_RANK[right_value]:
+            return left_value
+        return right_value
 
     def _derive_acceptable_evidence(self, source_domain: str) -> list[str]:
         if source_domain == "vision":

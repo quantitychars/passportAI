@@ -18,14 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from unittest.mock import MagicMock
 
-# Mock GemmaClient before any agent imports
-_mock = MagicMock()
-sys.modules.setdefault("src", _mock)
-sys.modules.setdefault("src.core", _mock)
-sys.modules.setdefault("src.core.gemma_client", _mock)
-_mock.GemmaClient = MagicMock
+# Keep the real src package importable for full-suite collection. Agent tests pass
+# client=None, so importing GemmaClient for type references must not be mocked.
 
 
 # ===========================================================================

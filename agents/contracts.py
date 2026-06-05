@@ -26,7 +26,16 @@ ConfidenceSource = Literal[
     "lookup_table",
     "regulation_text",
     "model_estimate",
+    "supplier_documentation",
     "insufficient_data",
+]
+
+EvidenceSource = Literal[
+    "observed_from_image",
+    "provided_by_user",
+    "derived_from_evidence",
+    "inferred_low_confidence",
+    "missing",
 ]
 
 MissingSeverity = Literal["critical", "required", "recommended", "optional"]
@@ -125,7 +134,16 @@ CONFIDENCE_SOURCE_VALUES = (
     "lookup_table",
     "regulation_text",
     "model_estimate",
+    "supplier_documentation",
     "insufficient_data",
+)
+
+EVIDENCE_SOURCE_VALUES = (
+    "observed_from_image",
+    "provided_by_user",
+    "derived_from_evidence",
+    "inferred_low_confidence",
+    "missing",
 )
 READINESS_VERDICT_VALUES = (
     "ready",
@@ -195,6 +213,7 @@ class MissingField(TypedDict, total=False):
     reason_code: ReasonCode
     source_agents: list[AgentName]
     current_evidence_status: EvidenceStatus
+    evidence_source: EvidenceSource
     closure_condition: str
     acceptable_evidence: list[AcceptableEvidence]
     why_it_matters: str
