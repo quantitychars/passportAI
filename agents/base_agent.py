@@ -20,7 +20,7 @@ __all__ = ["BaseAgent", "AgentSuccessResult", "AgentErrorResult", "AgentResult",
 
 logger = logging.getLogger(__name__)
 
-# Куда ссылаемся (Origin)
+# Where the data comes from (evidence origin)
 SourceType = Literal[
     "internal_csv",
     "regulation_text",
@@ -29,7 +29,7 @@ SourceType = Literal[
     "llm_knowledge",
 ]
 
-# Насколько уверены (Reliability)
+# How reliable the data is (confidence level)
 ConfidenceType = Literal[
     "lookup_table",
     "regulation_text",

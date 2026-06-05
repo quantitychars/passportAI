@@ -270,6 +270,18 @@
 {% endfor %}
 {% endif %}
 
+{% if vision_conflict.detected %}
+  <div class="banner banner-amber">
+    <strong>&#9888; Visual conflict detected</strong><br>
+    {% if vision_conflict.gemma_hint %}
+      Gemma identified <strong>{{ vision_conflict.gemma_hint }}</strong> but the product was classified as <strong>{{ vision_conflict.classified_as }}</strong>.
+    {% else %}
+      Gemma&#39;s image analysis produced a category hint that did not match the selected product category (<strong>{{ vision_conflict.classified_as }}</strong>).
+    {% endif %}
+    Please verify the product image matches the selected category before publication.
+  </div>
+{% endif %}
+
   {% macro gap_table(title, gaps, badge_class) -%}
     <h2>{{ title }}</h2>
     {% if gaps %}
@@ -286,6 +298,7 @@
               <span class="pill pill-amber">Not a direct publication blocker</span>
             {% endif %}
             <strong>{{ gap.current_evidence_status_label }}</strong>
+            {% if gap.evidence_source_label %}<span class="pill pill-blue">Evidence source: {{ gap.evidence_source_label }}</span>{% endif %}
             {% if gap.requires_supplier_confirmation %}<span class="pill pill-blue">Supplier confirmation needed</span>{% endif %}
           </div>
 

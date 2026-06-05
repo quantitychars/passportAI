@@ -14,8 +14,8 @@ Directory structure:
 
 Public URLs use the HOSTING_URL env var as base:
     http://localhost:7860/{passport_id}
-    http://localhost:7860/{passport_id}/photo
-    http://localhost:7860/{passport_id}/html
+    http://localhost:7860/{passport_id}/passport.html
+    http://localhost:7860/{passport_id}/qr.png
 
 Usage:
     from src.storage.local import LocalStorage
@@ -115,7 +115,7 @@ class LocalStorage(StorageProvider):
 
         Example:
             >>> url = storage.get_public_url("abc-123", "product_image.<ext>")
-            >>> print(url)  # "http://localhost:7860/abc-123/photo"
+            >>> print(url)  # "http://localhost:7860/abc-123/product_image.png"
         """
         # Map filenames to clean API routes
         route_map = {
@@ -165,10 +165,3 @@ class LocalStorage(StorageProvider):
             Path to output/{passport_id}/ directory.
         """
         return self.output_dir / passport_id
-
-
-if __name__ == "__main__":
-    storage = LocalStorage()
-    print(f"Output directory: {storage.output_dir.absolute()}")
-    print(f"Hosting URL:      {storage.hosting_url}")
-    print(f"Sample URL:       {storage.get_public_url('test-uuid-123', 'passport.json')}")

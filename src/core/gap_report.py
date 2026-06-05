@@ -134,6 +134,7 @@ class GapReportGenerator:
         output_dir: Path | str | None = None,
         passport_id: str | None = None,
         generated_at: datetime | None = None,
+        vision_result: dict[str, Any] | None = None,
     ) -> Path:
         """Generate ``gap_report.html`` from DataAuditAgent output.
 
@@ -142,6 +143,9 @@ class GapReportGenerator:
             output_dir: Directory where ``gap_report.html`` is written.
             passport_id: Stable passport identifier for display metadata.
             generated_at: Optional deterministic timestamp for tests/demos.
+            vision_result: Optional raw VisionAgent result envelope. When provided,
+                the vision conflict banner includes the specific category hint that
+                differed from the final classification.
 
         Returns:
             Path to the generated HTML report.
@@ -158,6 +162,7 @@ class GapReportGenerator:
             audit_result=audit_result,
             passport_id=passport_id,
             generated_at=generated_at,
+            vision_result=vision_result,
         )
         html = self._render_template(view_model)
 
@@ -171,6 +176,7 @@ class GapReportGenerator:
         audit_result: dict[str, Any],
         passport_id: str | None = None,
         generated_at: datetime | None = None,
+        vision_result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the stable template model used by the HTML report."""
         payload = self._extract_audit_payload(audit_result)
@@ -262,6 +268,11 @@ class GapReportGenerator:
                 self._humanize_process_message(item)
                 for item in self._clean_string_list(assessment.get("warnings", []))
             ],
+            "vision_conflict": self._build_vision_conflict(
+                warnings=assessment.get("warnings", []),
+                espr_core=espr_core,
+                vision_result=vision_result,
+            ),
             "assumptions": [
                 self._humanize_process_message(item)
                 for item in self._clean_string_list(assessment.get("assumptions", []))
@@ -273,6 +284,45 @@ class GapReportGenerator:
                 "raw_agent_outputs_included": False,
                 "dpp_json_used_as_source": False,
             },
+        }
+
+    def _build_vision_conflict(
+        self,
+        *,
+        warnings: list[Any],
+        espr_core: dict[str, Any],
+        vision_result: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Detect a vision/classification conflict and return a display block for the template.
+
+        A conflict is present when DataAuditAgent's cross-agent warning logic found
+        that VisionAgent's product_group_hint differed from the final classification.
+        DataAuditAgent writes a specific phrase into assessment.warnings in this case.
+        """
+        conflict_phrase = "VisionAgent product-group hint differs from final classification"
+        has_conflict = any(
+            isinstance(w, str) and conflict_phrase in w
+            for w in (warnings or [])
+        )
+        if not has_conflict:
+            return {"detected": False}
+
+        classified_as = self._clean_string(espr_core.get("product_group")) or "unknown"
+
+        # Extract Vision's hint if the full vision_result was provided by the caller.
+        gemma_hint: str | None = None
+        if isinstance(vision_result, dict):
+            data = vision_result.get("data") or vision_result
+            gemma_hint = self._clean_string(
+                (data.get("domain_data") or {})
+                .get("espr_core", {})
+                .get("product_group_hint")
+            )
+
+        return {
+            "detected": True,
+            "gemma_hint": gemma_hint,
+            "classified_as": classified_as,
         }
 
     def analyze_gaps(self, passport_json: dict, required_fields: list[str]) -> dict:
@@ -325,7 +375,7 @@ class GapReportGenerator:
                 rows.append(
                     "<tr>"
                     f"<td><code>{text(gap['field'])}</code><br>{text(gap['severity_label'])}</td>"
-                    f"<td><strong>{text(gap['current_evidence_status'].replace('_', ' '))}</strong><br>{text(gap['reason'])}</td>"
+                    f"<td><strong>{text(gap['current_evidence_status'].replace('_', ' '))}</strong><br>Evidence source: {text(gap.get('evidence_source_label', 'Missing'))}<br>{text(gap['reason'])}</td>"
                     f"<td>{text(gap['why_it_matters'])}</td>"
                     f"<td>{text(gap['where_to_get_data'])}</td>"
                     f"<td>{text(gap['closure_condition'])}<br><span class='muted'>Acceptable evidence: {text(evidence)}</span></td>"
@@ -516,6 +566,7 @@ class GapReportGenerator:
             )
 
             reason_code = self._clean_string(raw.get("reason_code")) or "missing"
+            evidence_source = self._clean_string(raw.get("evidence_source")) or "missing"
             source_agents = raw.get("source_agents")
             acceptable_evidence = raw.get("acceptable_evidence")
 
@@ -547,6 +598,8 @@ class GapReportGenerator:
                     "current_evidence_status_label": self._evidence_status_label(
                         self._clean_string(raw.get("current_evidence_status")) or "absent"
                     ),
+                    "evidence_source": evidence_source,
+                    "evidence_source_label": self._evidence_source_label(evidence_source),
                     "acceptable_evidence": self._clean_string_list(acceptable_evidence),
                     "where_to_get_data": self._humanize_field_references(
                         self._clean_string(raw.get("where_to_get_data"))
@@ -763,6 +816,17 @@ class GapReportGenerator:
         }
         return labels.get(status, self._split_identifier(status).title())
 
+
+
+    def _evidence_source_label(self, source: str) -> str:
+        labels = {
+            "observed_from_image": "Observed from image",
+            "provided_by_user": "Provided by user",
+            "derived_from_evidence": "Derived from evidence",
+            "inferred_low_confidence": "Low-confidence inference",
+            "missing": "Missing evidence",
+        }
+        return labels.get(source, self._split_identifier(source).title())
 
     def _split_identifier(self, value: str) -> str:
         if not value:
@@ -1054,7 +1118,3 @@ class GapReportGenerator:
             seen.add(text)
             cleaned.append(text)
         return cleaned
-
-
-if __name__ == "__main__":
-    print("GapReportGenerator loaded OK")

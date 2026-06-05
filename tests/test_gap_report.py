@@ -354,3 +354,101 @@ def test_view_model_humanizes_actions_supplier_requests_and_process_names(audit_
         "dpp.sectoralBattery.batteryClassification.batteryCategory"
     )
     assert "Battery category" in request["why_needed"]
+
+
+# ---------------------------------------------------------------------------
+# Vision conflict banner tests
+# ---------------------------------------------------------------------------
+
+_CONFLICT_WARNING = (
+    "VisionAgent product-group hint differs from final classification; "
+    "this is non-blocking because vision owns only a weak hint."
+)
+
+
+def _audit_result_with_conflict(base: dict) -> dict:
+    """Return a copy of audit_result with the DataAuditAgent conflict warning injected."""
+    result = copy.deepcopy(base)
+    result["data"]["assessment"]["warnings"].append(_CONFLICT_WARNING)
+    return result
+
+
+def test_vision_conflict_not_detected_without_warning(audit_result):
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=audit_result,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+    assert model["vision_conflict"]["detected"] is False
+
+
+def test_vision_conflict_detected_when_warning_present(audit_result):
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=_audit_result_with_conflict(audit_result),
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+    conflict = model["vision_conflict"]
+    assert conflict["detected"] is True
+    assert conflict["classified_as"] == "textiles"
+    assert conflict["gemma_hint"] is None  # no vision_result provided
+
+
+def test_vision_conflict_includes_gemma_hint_when_vision_result_provided(audit_result):
+    vision_result = {
+        "success": True,
+        "data": {
+            "domain_data": {
+                "espr_core": {"product_group_hint": "batteries"},
+                "sectoral": {},
+            },
+            "assessment": {},
+            "advisory": {},
+        },
+    }
+    model = GapReportGenerator(client=None).build_view_model(
+        audit_result=_audit_result_with_conflict(audit_result),
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+        vision_result=vision_result,
+    )
+    conflict = model["vision_conflict"]
+    assert conflict["detected"] is True
+    assert conflict["gemma_hint"] == "batteries"
+    assert conflict["classified_as"] == "textiles"
+
+
+def test_vision_conflict_banner_rendered_in_html(tmp_path, audit_result):
+    report_path = GapReportGenerator(client=None).generate(
+        audit_result=_audit_result_with_conflict(audit_result),
+        output_dir=tmp_path,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+        vision_result={
+            "success": True,
+            "data": {
+                "domain_data": {
+                    "espr_core": {"product_group_hint": "batteries"},
+                    "sectoral": {},
+                },
+                "assessment": {},
+                "advisory": {},
+            },
+        },
+    )
+    html = report_path.read_text(encoding="utf-8")
+    assert "Visual conflict detected" in html
+    assert "batteries" in html
+    assert "textiles" in html
+    assert "banner-amber" in html
+
+
+def test_vision_conflict_banner_absent_without_conflict(tmp_path, audit_result):
+    report_path = GapReportGenerator(client=None).generate(
+        audit_result=audit_result,
+        output_dir=tmp_path,
+        passport_id="demo-passport",
+        generated_at=datetime(2026, 4, 27, tzinfo=timezone.utc),
+    )
+    html = report_path.read_text(encoding="utf-8")
+    assert "Visual conflict detected" not in html

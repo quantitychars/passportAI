@@ -101,7 +101,8 @@ class GemmaClient:
         model: str | None = None,
         host: str | None = None,
         timeout: int | None = None,
-        validate_on_init: bool = False,  # TODO: consider True in production deployments
+        validate_on_init: bool = False,  # False for test/CI compatibility; set True in production
+                                          # to fail fast on startup if Ollama is unreachable.
     ) -> None:
         """Initialize GemmaClient.
 
