@@ -1,0 +1,37 @@
+# Secrets
+
+.env
+.env.\*
+
+# Version control
+
+.git
+.gitignore
+
+# Tests & dev tools
+
+tests/
+.claude/
+
+# Generated output
+
+output/
+
+# Python cache
+
+**pycache**/
+_.pyc
+_.pyo
+\*.pyd
+.pytest_cache/
+
+# Dev documentation
+
+docs/
+\*.md
+!README.md
+
+# IDE
+
+.vscode/
+.idea/
