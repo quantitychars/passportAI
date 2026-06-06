@@ -85,7 +85,7 @@ The key architectural constraint is separation of concerns. Agents produce bound
 - boto3 / botocore for S3 publishing
 - jsonschema for schema validation and structured data checks
 - pytest for tests
-- Development tooling listed in `requirements.txt`: black, isort, mypy, ruff
+- Development tooling listed in `requirements-dev.txt`: black, isort, mypy, ruff
 
 ## Installation
 
@@ -96,8 +96,11 @@ source .venv/bin/activate
 # Windows PowerShell:
 # .venv\Scripts\Activate.ps1
 
-# 2. Install dependencies
+# 2. Install runtime dependencies
 pip install -r requirements.txt
+
+# 2a. For local development and testing, also install dev dependencies
+pip install -r requirements-dev.txt
 
 # 3. Create local configuration
 cp .env.example .env
@@ -110,6 +113,21 @@ ollama pull gemma4:e4b
 ```
 
 Make sure Ollama is running before using `live_gemma` mode or `scripts/run_demo_passport.py`.
+
+## Running with Docker
+
+```bash
+docker build -t passportai .
+docker-compose up
+```
+
+Then open:
+
+```text
+http://localhost:7860
+```
+
+Note: Ollama must be running locally for `live_gemma` mode. The container connects to Ollama on the host via `host.docker.internal`.
 
 ## Running the Gradio UI
 
@@ -177,6 +195,8 @@ QR URL or local QR path: generated data-carrier artifact
 
 S3 hosting does not prove compliance readiness. It only makes the public passport page reachable. The audit verdict controls whether publication should be considered supported.
 
+See [docs/s3_bucket_setup.md](docs/s3_bucket_setup.md) for bucket creation and IAM setup instructions.
+
 ## Project structure
 
 ```text
@@ -196,55 +216,15 @@ passportai_repo/
 │   └── utils/              # JSON-LD loading utilities
 ├── templates/              # Jinja2 HTML templates
 ├── tests/                  # pytest suite
-├── FINAL_POLISH_PLAN.md    # Remaining polish plan
 ├── README.md               # Project documentation
-└── requirements.txt        # Python dependencies
+├── requirements.txt        # Runtime dependencies
+└── requirements-dev.txt    # Development and testing dependencies
 ```
-
-## Development status
-
-According to `FINAL_POLISH_PLAN.md`, the core vertical slice is already working:
-
-- agent pipeline
-- `passport.json`
-- `passport.html`
-- `gap_report.html`
-- S3 hosting for the public passport page
-- QR code
-- Gradio UI v1
-
-Observed status in this archive:
-
-- The final-plan test subset passes:
-  - `pytest tests/test_gradio_app.py -q`
-  - `pytest tests/test_pipeline.py -q`
-  - `pytest tests/test_qr_generator.py -q`
-  - `pytest tests/test_s3_storage.py -q`
-  - `pytest tests/test_dpp_generator.py -q`
-  - `pytest tests/test_passport_renderer.py -q`
-  - `pytest tests/test_gap_report.py -q`
-- The Gradio UI implements the readiness/storage separation required by the polish plan.
-- `PassportPipeline` sends only `passport.html` to upload-only storage providers such as S3.
-- The generated local review package still includes JSON, gap report, QR, image, and ZIP artifacts.
-- `scripts/run_gradio_app.py` is the practical UI entry point.
-- The repository contains generated `output/` examples and a `.env` file in the archive. These should be removed or sanitized before public submission.
-
-## Remaining polish work
-
-From `FINAL_POLISH_PLAN.md`, the main remaining work is submission hardening, not new architecture:
-
-- Finish visual polish for the Gradio workspace if final screenshots still look too prototype-like.
-- Keep polishing `passport.html` and `gap_report.html` for a credible demo video.
-- Clean generated outputs, caches, empty files, and obsolete skeleton/docs that conflict with the current plan.
-- Lock the battery hero scenario and add `docs/HERO_SCENARIO.md` plus screenshots under `demo_assets/screenshots/`.
-- Record the final 3-minute demo video.
-- Run the final test subset again after cleanup.
 
 ## Known limitations
 
 - PassportAI does not certify legal compliance. It produces a draft passport and a deterministic evidence gap report.
 - Missing evidence should block unsupported publication claims.
-- Historical planning notes are kept for development context. Treat `FINAL_DEV_CONTEXT.md` and `FINAL_POLISH_PLAN.md` as the source of truth for the final architecture.
 - Some schema files exist for product categories beyond the currently supported runtime product groups; do not present those categories as implemented until pipeline support is added.
 - Full test-suite execution is supported in this archive; Ollama integration tests remain skipped by default unless `SKIP_OLLAMA_TESTS=false` is set.
 
